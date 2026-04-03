@@ -105,7 +105,7 @@ export default function Dashboard() {
     const { contacts, deals, tasks } = data;
     const activeDeals = deals.filter(d => d.status === 'active' || d.status === 'open' || !d.status);
     const pipelineValue = activeDeals.reduce((sum, d) => sum + (parseFloat(d.value) || 0), 0);
-    const pendingTasks = tasks.filter(t => t.status !== 'Completed' && t.status !== 'Cancelled');
+    const pendingTasks = tasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled');
 
     // Weekly trends (items created in last 7 days)
     const weekAgo = subDays(new Date(), 7);
@@ -158,7 +158,7 @@ export default function Dashboard() {
 
     // Overdue tasks
     tasks.forEach(t => {
-      if (t.status === 'Completed' || t.status === 'Cancelled') return;
+      if (t.status === 'completed' || t.status === 'cancelled') return;
       if (t.due_date && isPast(parseISO(t.due_date)) && !isToday(parseISO(t.due_date))) {
         items.push({
           id: `task-${t.id}`,
@@ -173,7 +173,7 @@ export default function Dashboard() {
 
     // Tasks due today
     tasks.forEach(t => {
-      if (t.status === 'Completed' || t.status === 'Cancelled') return;
+      if (t.status === 'completed' || t.status === 'cancelled') return;
       if (t.due_date && isToday(parseISO(t.due_date))) {
         items.push({
           id: `task-today-${t.id}`,
@@ -213,7 +213,7 @@ export default function Dashboard() {
   const upcomingTasks = useMemo(() => {
     const { tasks } = data;
     return tasks
-      .filter(t => t.status !== 'Completed' && t.status !== 'Cancelled' && t.due_date)
+      .filter(t => t.status !== 'completed' && t.status !== 'cancelled' && t.due_date)
       .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
       .slice(0, 5);
   }, [data]);
@@ -225,7 +225,7 @@ export default function Dashboard() {
     const avgDealValue = deals.length > 0
       ? deals.reduce((sum, d) => sum + (d.value || 0), 0) / deals.length
       : 0;
-    const completedTasks = tasks.filter(t => t.status === 'Completed').length;
+    const completedTasks = tasks.filter(t => t.status === 'completed').length;
     const totalTasks = tasks.length;
 
     return {
@@ -465,7 +465,7 @@ export default function Dashboard() {
                         <span className={`text-xs ${isOverdue ? 'text-red-600' : isDueToday ? 'text-amber-600' : 'text-text-subtle'}`}>
                           {isOverdue ? 'Overdue' : isDueToday ? 'Today' : dueDate}
                         </span>
-                        <span className={`badge ${getPriorityColor(task.priority)}`}>{task.priority}</span>
+                        <span className={`badge ${getPriorityColor(task.priority)}`}>{(task.priority || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
                       </div>
                     </div>
                   </div>

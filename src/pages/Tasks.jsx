@@ -17,8 +17,9 @@ import {
 } from 'date-fns';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
-const STATUSES = ['Pending', 'In Progress', 'Completed', 'Cancelled'];
-const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
+const STATUSES = ['pending', 'in_progress', 'completed', 'cancelled'];
+const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+const displayLabel = (val) => val ? val.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
 
 export default function Tasks() {
   const [searchParams] = useSearchParams();
@@ -44,7 +45,7 @@ export default function Tasks() {
 
   const [formData, setFormData] = useState({
     title: '', description: '', contact_id: '', deal_id: '',
-    priority: 'Medium', due_date: '', status: 'Pending', type: 'other',
+    priority: 'medium', due_date: '', status: 'pending', type: 'other',
   });
 
   useEffect(() => {
@@ -111,7 +112,7 @@ export default function Tasks() {
   const groupedTasks = useMemo(() => {
     const groups = { Overdue: [], Today: [], 'This Week': [], Later: [], 'No Date': [] };
     filteredTasks.forEach(t => {
-      if (t.status === 'Completed' || t.status === 'Cancelled') {
+      if (t.status === 'completed' || t.status === 'cancelled') {
         groups['Later'].push(t);
         return;
       }
@@ -127,10 +128,10 @@ export default function Tasks() {
 
   // Board columns
   const boardColumns = useMemo(() => {
-    const columns = { 'Pending': [], 'In Progress': [], 'Completed': [] };
-    filteredTasks.filter(t => t.status !== 'Cancelled').forEach(t => {
+    const columns = { 'pending': [], 'in_progress': [], 'completed': [] };
+    filteredTasks.filter(t => t.status !== 'cancelled').forEach(t => {
       if (columns[t.status]) columns[t.status].push(t);
-      else columns['Pending'].push(t);
+      else columns['pending'].push(t);
     });
     return columns;
   }, [filteredTasks]);
@@ -156,12 +157,12 @@ export default function Tasks() {
       setFormData({
         title: task.title, description: task.description || '',
         contact_id: task.contact_id || '', deal_id: task.deal_id || '',
-        priority: task.priority || 'Medium', due_date: task.due_date || '',
-        status: task.status || 'Pending', type: task.type || 'other',
+        priority: task.priority || 'medium', due_date: task.due_date || '',
+        status: task.status || 'pending', type: task.type || 'other',
       });
     } else {
       setEditingTask(null);
-      setFormData({ title: '', description: '', contact_id: '', deal_id: '', priority: 'Medium', due_date: '', status: 'Pending', type: 'other' });
+      setFormData({ title: '', description: '', contact_id: '', deal_id: '', priority: 'medium', due_date: '', status: 'pending', type: 'other' });
     }
     setShowModal(true);
   };
@@ -199,7 +200,7 @@ export default function Tasks() {
   const handleQuickAdd = async (e) => {
     if (e.key !== 'Enter' || !quickAddText.trim()) return;
     try {
-      const { error } = await supabase.from('tasks').insert({ title: quickAddText.trim(), priority: 'Medium', status: 'Pending', type: 'other' });
+      const { error } = await supabase.from('tasks').insert({ title: quickAddText.trim(), priority: 'medium', status: 'pending', type: 'other' });
       if (error) throw error;
       setQuickAddText('');
       toast.success('Task added');
@@ -211,8 +212,8 @@ export default function Tasks() {
   };
 
   const handleToggleCompleted = async (task) => {
-    const newStatus = task.status === 'Completed' ? 'Pending' : 'Completed';
-    const completedAt = newStatus === 'Completed' ? new Date().toISOString() : null;
+    const newStatus = task.status === 'completed' ? 'pending' : 'completed';
+    const completedAt = newStatus === 'completed' ? new Date().toISOString() : null;
     // Optimistic update
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus, completed_at: completedAt } : t));
     try {
@@ -265,7 +266,7 @@ export default function Tasks() {
     // Board drop (droppableId is a status)
     const newStatus = destinationId;
     if (task.status === newStatus) return;
-    const completedAt = newStatus === 'Completed' ? new Date().toISOString() : null;
+    const completedAt = newStatus === 'completed' ? new Date().toISOString() : null;
     // Optimistic
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus, completed_at: completedAt } : t));
     try {
@@ -283,20 +284,20 @@ export default function Tasks() {
     const dealTitle = findDealTitle(deals, task.deal_id);
     const dueInfo = getDueDateInfo(task.due_date);
     const typeInfo = getTaskTypeInfo(task.type);
-    const isOverdue = task.due_date && isPast(parseISO(task.due_date)) && !isToday(parseISO(task.due_date)) && task.status !== 'Completed' && task.status !== 'Cancelled';
-    const isDueToday = task.due_date && isToday(parseISO(task.due_date)) && task.status !== 'Completed' && task.status !== 'Cancelled';
+    const isOverdue = task.due_date && isPast(parseISO(task.due_date)) && !isToday(parseISO(task.due_date)) && task.status !== 'completed' && task.status !== 'cancelled';
+    const isDueToday = task.due_date && isToday(parseISO(task.due_date)) && task.status !== 'completed' && task.status !== 'cancelled';
 
     return (
       <div className={`flex items-start gap-3 p-3 rounded-lg transition-colors hover:bg-surface group border-l-3 ${
-        task.status === 'Completed' ? 'opacity-50' : ''
+        task.status === 'completed' ? 'opacity-50' : ''
       } ${isOverdue ? 'border-l-red-400' : isDueToday ? 'border-l-amber-400' : `type-border-${task.type || 'other'}`}`}>
         <button
           onClick={() => handleToggleCompleted(task)}
           className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-colors flex-shrink-0 mt-0.5 cursor-pointer ${
-            task.status === 'Completed' ? 'bg-primary-600 border-primary-600' : 'border-border-hover hover:border-primary-400'
+            task.status === 'completed' ? 'bg-primary-600 border-primary-600' : 'border-border-hover hover:border-primary-400'
           }`}
         >
-          {task.status === 'Completed' && (
+          {task.status === 'completed' && (
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
               <path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -304,7 +305,7 @@ export default function Tasks() {
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
-            <h3 className={`text-sm font-medium ${task.status === 'Completed' ? 'line-through text-text-subtle' : 'text-text'}`}>
+            <h3 className={`text-sm font-medium ${task.status === 'completed' ? 'line-through text-text-subtle' : 'text-text'}`}>
               {task.title}
             </h3>
             <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -312,7 +313,7 @@ export default function Tasks() {
                 {typeInfo.label}
               </span>
               <span className={`badge ${getPriorityColor(task.priority)}`}>
-                {task.priority || 'Medium'}
+                {displayLabel(task.priority || 'medium')}
               </span>
             </div>
           </div>
@@ -341,8 +342,8 @@ export default function Tasks() {
     );
   };
 
-  const statusIcons = { 'Pending': Clock, 'In Progress': AlertTriangle, 'Completed': CheckCircle2 };
-  const statusColors = { 'Pending': 'text-text-muted', 'In Progress': 'text-amber-600', 'Completed': 'text-emerald-600' };
+  const statusIcons = { 'pending': Clock, 'in_progress': AlertTriangle, 'completed': CheckCircle2 };
+  const statusColors = { 'pending': 'text-text-muted', 'in_progress': 'text-amber-600', 'completed': 'text-emerald-600' };
 
   return (
     <div className="space-y-4">
@@ -397,7 +398,7 @@ export default function Tasks() {
         </div>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input-base text-xs py-1.5 !w-auto">
           <option>All</option>
-          {STATUSES.map(s => <option key={s}>{s}</option>)}
+          {STATUSES.map(s => <option key={s} value={s}>{displayLabel(s)}</option>)}
         </select>
         <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input-base text-xs py-1.5 !w-auto">
           <option value="All">All Types</option>
@@ -405,7 +406,7 @@ export default function Tasks() {
         </select>
         <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="input-base text-xs py-1.5 !w-auto hidden sm:block">
           <option>All</option>
-          {PRIORITIES.map(p => <option key={p}>{p}</option>)}
+          {PRIORITIES.map(p => <option key={p} value={p}>{displayLabel(p)}</option>)}
         </select>
         <select value={contactFilter} onChange={(e) => setContactFilter(e.target.value)} className="input-base text-xs py-1.5 !w-auto hidden sm:block">
           <option value="All">All Contacts</option>
@@ -500,7 +501,7 @@ export default function Tasks() {
                       <div className="p-3 border-b border-border-subtle">
                         <div className="flex items-center gap-2">
                           <StatusIcon size={15} className={statusColors[status]} />
-                          <h3 className="text-sm font-semibold text-text">{status}</h3>
+                          <h3 className="text-sm font-semibold text-text">{displayLabel(status)}</h3>
                           <span className="ml-auto text-xs text-text-subtle bg-surface-card border border-border-subtle rounded-full px-2 py-0.5">
                             {columnTasks.length}
                           </span>
@@ -522,7 +523,7 @@ export default function Tasks() {
                                   <h4 className="text-sm font-medium text-text mb-1.5">{task.title}</h4>
                                   <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
                                     <span className={`badge ${getTaskTypeColor(task.type)}`}>{typeInfo.label}</span>
-                                    <span className={`badge ${getPriorityColor(task.priority)}`}>{task.priority || 'Medium'}</span>
+                                    <span className={`badge ${getPriorityColor(task.priority)}`}>{displayLabel(task.priority || 'medium')}</span>
                                     {task.due_date && (
                                       <span className={`text-xs ${getDueDateInfo(task.due_date).color}`}>
                                         {getDueDateInfo(task.due_date).text}
@@ -618,7 +619,7 @@ export default function Tasks() {
                                     {...dragProvided.dragHandleProps}
                                     onClick={(e) => e.stopPropagation()}
                                     className={`text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 ${
-                                      t.status === 'Completed'
+                                      t.status === 'completed'
                                         ? 'bg-emerald-100 text-emerald-700 line-through border-l-emerald-500'
                                         : isPast(parseISO(t.due_date)) && !isToday(parseISO(t.due_date))
                                         ? 'bg-red-100 text-red-700 border-l-red-500'
@@ -642,7 +643,7 @@ export default function Tasks() {
                               <div
                                 key={t.id}
                                 className={`w-1.5 h-1.5 rounded-full ${
-                                  t.status === 'Completed' ? 'bg-emerald-500'
+                                  t.status === 'completed' ? 'bg-emerald-500'
                                     : isPast(parseISO(t.due_date)) && !isToday(parseISO(t.due_date)) ? 'bg-red-500'
                                     : 'bg-primary-500'
                                 }`}
@@ -714,13 +715,13 @@ export default function Tasks() {
               <div>
                 <label className="block text-xs font-medium text-text-secondary mb-1.5">Priority</label>
                 <select value={formData.priority} onChange={(e) => setFormData({ ...formData, priority: e.target.value })} className="input-base">
-                  {PRIORITIES.map(p => <option key={p}>{p}</option>)}
+                  {PRIORITIES.map(p => <option key={p} value={p}>{displayLabel(p)}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-secondary mb-1.5">Status</label>
                 <select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value })} className="input-base">
-                  {STATUSES.map(s => <option key={s}>{s}</option>)}
+                  {STATUSES.map(s => <option key={s} value={s}>{displayLabel(s)}</option>)}
                 </select>
               </div>
               <div>

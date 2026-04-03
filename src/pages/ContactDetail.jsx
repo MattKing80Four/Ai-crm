@@ -35,7 +35,7 @@ export default function ContactDetail() {
   const [showInteractionForm, setShowInteractionForm] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', status: 'Pending', priority: 'Medium', dueDate: '', type: 'other' });
+  const [newTask, setNewTask] = useState({ title: '', status: 'pending', priority: 'medium', dueDate: '', type: 'other' });
   const [newInteraction, setNewInteraction] = useState({ subject: '', content: '', channel: 'email', direction: 'outbound' });
   const [editForm, setEditForm] = useState({
     first_name: '', last_name: '', email: '', phone: '', company: '', source: 'manual', status: 'lead', tags: '',
@@ -75,7 +75,7 @@ export default function ContactDetail() {
     return [
       ...notes.map(n => ({ ...n, _type: 'note', _icon: FileText, _color: 'bg-blue-50 text-blue-600' })),
       ...interactions.map(i => ({ ...i, _type: 'interaction', _icon: i.direction === 'inbound' ? ArrowDownLeft : ArrowUpRight, _color: i.direction === 'inbound' ? 'bg-emerald-50 text-emerald-600' : 'bg-indigo-50 text-indigo-600' })),
-      ...tasks.map(t => ({ ...t, _type: 'task', _icon: CheckSquare, _color: t.status === 'Completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600' })),
+      ...tasks.map(t => ({ ...t, _type: 'task', _icon: CheckSquare, _color: t.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600' })),
       ...deals.map(d => ({ ...d, _type: 'deal', _icon: TrendingUp, _color: 'bg-violet-50 text-violet-600' })),
     ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   }, [notes, interactions, tasks, deals]);
@@ -109,7 +109,7 @@ export default function ContactDetail() {
         type: newTask.type || 'other',
       }]);
       if (error) throw error;
-      setNewTask({ title: '', status: 'Pending', priority: 'Medium', dueDate: '', type: 'other' });
+      setNewTask({ title: '', status: 'pending', priority: 'medium', dueDate: '', type: 'other' });
       setShowTaskForm(false);
       toast.success('Task created');
       fetchContactData();
@@ -195,8 +195,8 @@ export default function ContactDetail() {
   };
 
   const handleToggleTask = async (task) => {
-    const newStatus = task.status === 'Completed' ? 'Pending' : 'Completed';
-    const completedAt = newStatus === 'Completed' ? new Date().toISOString() : null;
+    const newStatus = task.status === 'completed' ? 'pending' : 'completed';
+    const completedAt = newStatus === 'completed' ? new Date().toISOString() : null;
     // Optimistic
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus, completed_at: completedAt } : t));
     try {
@@ -448,10 +448,10 @@ export default function ContactDetail() {
                       {TASK_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
                     <select value={newTask.priority} onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })} className="input-base text-sm">
-                      <option>Low</option><option>Medium</option><option>High</option><option>Urgent</option>
+                      <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
                     </select>
                     <select value={newTask.status} onChange={(e) => setNewTask({ ...newTask, status: e.target.value })} className="input-base text-sm">
-                      <option>Pending</option><option>In Progress</option><option>Completed</option>
+                      <option value="pending">Pending</option><option value="in_progress">In Progress</option><option value="completed">Completed</option>
                     </select>
                     <input type="date" value={newTask.dueDate} onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })} className="input-base text-sm" />
                   </div>
@@ -471,18 +471,18 @@ export default function ContactDetail() {
                       <button
                         onClick={() => handleToggleTask(task)}
                         className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 cursor-pointer ${
-                          task.status === 'Completed' ? 'bg-primary-600 border-primary-600' : 'border-border-hover hover:border-primary-400'
+                          task.status === 'completed' ? 'bg-primary-600 border-primary-600' : 'border-border-hover hover:border-primary-400'
                         }`}
                       >
-                        {task.status === 'Completed' && (
+                        {task.status === 'completed' && (
                           <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                         )}
                       </button>
                       <div className="flex-1">
-                        <p className={`text-sm font-medium ${task.status === 'Completed' ? 'line-through text-text-subtle' : 'text-text'}`}>{task.title}</p>
+                        <p className={`text-sm font-medium ${task.status === 'completed' ? 'line-through text-text-subtle' : 'text-text'}`}>{task.title}</p>
                         <div className="flex gap-1.5 mt-1 text-xs flex-wrap">
                           <span className={`badge ${getTaskTypeColor(task.type)}`}>{typeInfo.label}</span>
-                          <span className={`badge ${getPriorityColor(task.priority)}`}>{task.priority || 'Medium'}</span>
+                          <span className={`badge ${getPriorityColor(task.priority)}`}>{(task.priority || 'medium').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
                           {task.due_date && <span className={getDueDateInfo(task.due_date).color}>{getDueDateInfo(task.due_date).text}</span>}
                         </div>
                       </div>

@@ -102,7 +102,7 @@ export default function Projects() {
         totalValue: proj.deals.reduce((sum, d) => sum + (parseFloat(d.value) || 0), 0),
         activeDeals: proj.deals.filter(d => d.status === 'active' || d.status === 'open' || !d.status).length,
         wonDeals: proj.deals.filter(d => d.status === 'won').length,
-        pendingTasks: proj.tasks.filter(t => t.status !== 'Completed' && t.status !== 'Cancelled').length,
+        pendingTasks: proj.tasks.filter(t => t.status !== 'Completed' && t.status !== 'cancelled').length,
         stageDistribution: stages.map(s => ({
           name: s.name,
           color: s.color || '#6366f1',
@@ -268,10 +268,10 @@ export default function Projects() {
                   return (
                     <div key={task.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-surface transition-colors">
                       <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${
-                        task.status === 'Completed' ? 'bg-primary-600 border-primary-600' : 'border-border-hover'
+                        task.status === 'completed' ? 'bg-primary-600 border-primary-600' : 'border-border-hover'
                       }`} />
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm ${task.status === 'Completed' ? 'line-through text-text-subtle' : 'text-text'}`}>
+                        <p className={`text-sm ${task.status === 'completed' ? 'line-through text-text-subtle' : 'text-text'}`}>
                           {task.title}
                         </p>
                       </div>
