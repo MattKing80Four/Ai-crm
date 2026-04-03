@@ -9,7 +9,7 @@ import {
 import {
   Plus, Search, Camera, MessageCircle, Mail, Globe, AlertCircle,
   LayoutGrid, List, ChevronDown, ChevronRight, Building2, X, Filter,
-  ArrowUpDown, Trash2,
+  ArrowUpDown, Trash2, Phone, ExternalLink,
 } from 'lucide-react';
 
 const SOURCE_ICONS = {
@@ -28,11 +28,13 @@ export default function Contacts() {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilters, setStatusFilters] = useState(['All']);
-  const [sourceFilter, setSourceFilter] = useState('All');
-  const [sortBy, setSortBy] = useState('Newest');
+  const [statusFilters, setStatusFilters] = useState(() => {
+    try { const s = localStorage.getItem('contacts-status'); return s ? JSON.parse(s) : ['All']; } catch { return ['All']; }
+  });
+  const [sourceFilter, setSourceFilter] = useState(() => localStorage.getItem('contacts-source') || 'All');
+  const [sortBy, setSortBy] = useState(() => localStorage.getItem('contacts-sort') || 'Newest');
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('contacts-view') || 'table');
-  const [groupByCompany, setGroupByCompany] = useState(false);
+  const [groupByCompany, setGroupByCompany] = useState(() => localStorage.getItem('contacts-group') === 'true');
   const [showFilters, setShowFilters] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -54,7 +56,11 @@ export default function Contacts() {
 
   useEffect(() => {
     localStorage.setItem('contacts-view', viewMode);
-  }, [viewMode]);
+    localStorage.setItem('contacts-status', JSON.stringify(statusFilters));
+    localStorage.setItem('contacts-source', sourceFilter);
+    localStorage.setItem('contacts-sort', sortBy);
+    localStorage.setItem('contacts-group', groupByCompany.toString());
+  }, [viewMode, statusFilters, sourceFilter, sortBy, groupByCompany]);
 
   const fetchContacts = async () => {
     try {
@@ -290,7 +296,21 @@ export default function Contacts() {
             <span key={i} className="badge bg-primary-50 text-primary-700">{tag}</span>
           ))}
         </div>
-        <p className="text-text-subtle text-xs mt-2">{formatRelativeDate(contact.created_at)}</p>
+        <div className="flex items-center justify-between mt-2">
+          <p className="text-text-subtle text-xs">{formatRelativeDate(contact.created_at)}</p>
+          <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+            {contact.email && (
+              <a href={`mailto:${contact.email}`} className="p-1 rounded-md text-text-subtle hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Email">
+                <Mail size={13} />
+              </a>
+            )}
+            {contact.phone && (
+              <a href={`tel:${contact.phone}`} className="p-1 rounded-md text-text-subtle hover:text-emerald-600 hover:bg-emerald-50 transition-colors" title="Call">
+                <Phone size={13} />
+              </a>
+            )}
+          </div>
+        </div>
       </div>
     );
   };

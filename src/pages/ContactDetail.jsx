@@ -12,7 +12,8 @@ import {
   ArrowLeft, Edit, Phone, Mail, Building, Calendar,
   MessageSquare, CheckSquare, TrendingUp, Plus, AlertCircle,
   ArrowUpRight, ArrowDownLeft, Trash2, FileText, Clock,
-  PhoneCall, StickyNote, User,
+  PhoneCall, StickyNote, User, ExternalLink, Send,
+  Globe, Copy, Check,
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 
@@ -40,6 +41,21 @@ export default function ContactDetail() {
   const [editForm, setEditForm] = useState({
     first_name: '', last_name: '', email: '', phone: '', company: '', source: 'manual', status: 'lead', tags: '',
   });
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyEmail = () => {
+    if (contact?.email) {
+      navigator.clipboard.writeText(contact.email);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const getWhatsAppLink = () => {
+    if (!contact?.phone) return null;
+    const phone = contact.phone.replace(/[^0-9+]/g, '');
+    return `https://wa.me/${phone.startsWith('+') ? phone.slice(1) : phone}`;
+  };
 
   useEffect(() => { fetchContactData(); }, [id]);
 
@@ -241,7 +257,7 @@ export default function ContactDetail() {
   }
 
   const totalDealValue = deals.reduce((sum, d) => sum + (d.value || 0), 0);
-  const tabs = ['Timeline', 'Notes', 'Tasks', 'Interactions', 'Deals'];
+  const tabs = ['Timeline', 'Notes', 'Tasks', 'Emails', 'Interactions', 'Deals'];
 
   return (
     <div className="space-y-4">
@@ -288,19 +304,67 @@ export default function ContactDetail() {
               ))}
             </div>
 
-            <div className="border-t border-border-subtle mt-4 pt-4 space-y-3 text-sm">
-              {contact.email && (
-                <a href={`mailto:${contact.email}`} className="flex items-center gap-2 text-primary-600 hover:text-primary-700">
-                  <Mail size={14} /> <span className="truncate">{contact.email}</span>
-                </a>
-              )}
-              {contact.phone && (
-                <a href={`tel:${contact.phone}`} className="flex items-center gap-2 text-primary-600 hover:text-primary-700">
-                  <Phone size={14} /> {contact.phone}
-                </a>
-              )}
-              <div className="flex items-center gap-2 text-text-muted">
-                <Calendar size={14} /> Added {format(new Date(contact.created_at), 'MMM d, yyyy')}
+            {/* Quick Contact Actions */}
+            <div className="border-t border-border-subtle mt-4 pt-4">
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                {contact.email && (
+                  <a
+                    href={`mailto:${contact.email}`}
+                    className="flex flex-col items-center gap-1.5 p-2.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                    title="Send email"
+                  >
+                    <Mail size={16} />
+                    <span className="text-[10px] font-medium">Email</span>
+                  </a>
+                )}
+                {contact.phone && (
+                  <a
+                    href={`tel:${contact.phone}`}
+                    className="flex flex-col items-center gap-1.5 p-2.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
+                    title="Call"
+                  >
+                    <Phone size={16} />
+                    <span className="text-[10px] font-medium">Call</span>
+                  </a>
+                )}
+                {contact.phone && getWhatsAppLink() && (
+                  <a
+                    href={getWhatsAppLink()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex flex-col items-center gap-1.5 p-2.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
+                    title="WhatsApp"
+                  >
+                    <MessageSquare size={16} />
+                    <span className="text-[10px] font-medium">WhatsApp</span>
+                  </a>
+                )}
+              </div>
+
+              <div className="space-y-2.5 text-sm">
+                {contact.email && (
+                  <div className="flex items-center gap-2 group">
+                    <Mail size={14} className="text-text-subtle flex-shrink-0" />
+                    <span className="text-text-muted truncate flex-1">{contact.email}</span>
+                    <button
+                      onClick={handleCopyEmail}
+                      className="opacity-0 group-hover:opacity-100 text-text-subtle hover:text-primary-600 transition-all cursor-pointer p-0.5"
+                      title="Copy email"
+                    >
+                      {copied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                    </button>
+                  </div>
+                )}
+                {contact.phone && (
+                  <div className="flex items-center gap-2 text-text-muted">
+                    <Phone size={14} className="text-text-subtle flex-shrink-0" />
+                    <span>{contact.phone}</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 text-text-muted">
+                  <Calendar size={14} className="text-text-subtle flex-shrink-0" />
+                  <span>Added {format(new Date(contact.created_at), 'MMM d, yyyy')}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -490,6 +554,137 @@ export default function ContactDetail() {
                   );
                 })
               )}
+            </div>
+          )}
+
+          {/* Emails Tab */}
+          {activeTab === 'Emails' && (
+            <div className="space-y-3">
+              {/* Quick Email Actions */}
+              <div className="card p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-text">Email Actions</h3>
+                </div>
+                {contact.email ? (
+                  <div className="space-y-3">
+                    <div className="flex gap-2 flex-wrap">
+                      <a
+                        href={`mailto:${contact.email}`}
+                        className="btn-primary text-xs"
+                      >
+                        <Send size={13} /> Compose Email
+                      </a>
+                      <a
+                        href={`mailto:${contact.email}?subject=Following up`}
+                        className="btn-secondary text-xs"
+                      >
+                        <Mail size={13} /> Quick Follow-Up
+                      </a>
+                      <button onClick={handleCopyEmail} className="btn-secondary text-xs">
+                        {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy Email</>}
+                      </button>
+                    </div>
+                    <div className="bg-surface rounded-lg p-3 border border-border-subtle">
+                      <p className="text-xs text-text-muted mb-1.5">Email address</p>
+                      <p className="text-sm text-text font-mono">{contact.email}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <Mail size={24} className="mx-auto text-text-subtle mb-2" />
+                    <p className="text-text-muted text-sm">No email address on file</p>
+                    <button onClick={handleOpenEdit} className="text-primary-600 hover:text-primary-700 text-xs font-medium mt-2 cursor-pointer">
+                      Add email address
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Email-type interactions */}
+              <div className="card p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-text">Email History</h3>
+                  <button
+                    onClick={() => {
+                      setNewInteraction({ subject: '', content: '', channel: 'email', direction: 'outbound' });
+                      setActiveTab('Interactions');
+                      setShowInteractionForm(true);
+                    }}
+                    className="text-primary-600 hover:text-primary-700 text-xs font-medium cursor-pointer"
+                  >
+                    <span className="flex items-center gap-1"><Plus size={12} /> Log Email</span>
+                  </button>
+                </div>
+                {(() => {
+                  const emailInteractions = interactions.filter(i => i.channel === 'email');
+                  if (emailInteractions.length === 0) {
+                    return (
+                      <div className="text-center py-6">
+                        <FileText size={24} className="mx-auto text-text-subtle mb-2" />
+                        <p className="text-text-subtle text-sm">No emails logged yet</p>
+                        <p className="text-text-subtle text-xs mt-1">Log your email interactions to build a history</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="space-y-2">
+                      {emailInteractions.map(interaction => (
+                        <div key={interaction.id} className="flex gap-3 p-3 rounded-lg hover:bg-surface transition-colors">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                            interaction.direction === 'inbound' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'
+                          }`}>
+                            {interaction.direction === 'inbound' ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-text text-sm font-medium truncate">{interaction.subject || 'Email'}</p>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                                interaction.direction === 'inbound'
+                                  ? 'bg-emerald-50 text-emerald-600'
+                                  : 'bg-blue-50 text-blue-600'
+                              }`}>
+                                {interaction.direction === 'inbound' ? 'Received' : 'Sent'}
+                              </span>
+                            </div>
+                            {interaction.content && (
+                              <p className="text-text-muted text-xs mt-0.5 line-clamp-2">{interaction.content}</p>
+                            )}
+                            <p className="text-text-subtle text-xs mt-1">{formatRelativeDate(interaction.created_at)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Email templates */}
+              <div className="card p-5">
+                <h3 className="text-sm font-semibold text-text mb-3">Quick Templates</h3>
+                <div className="space-y-2">
+                  {[
+                    { label: 'Follow-up', subject: 'Following up on our conversation', body: `Hi ${contact.first_name},\n\nJust following up on our recent conversation. Would love to hear your thoughts.\n\nBest regards` },
+                    { label: 'Quote / Proposal', subject: 'Your photography quote', body: `Hi ${contact.first_name},\n\nThank you for your interest. Please find the details of your quote below:\n\n[Quote details]\n\nLet me know if you have any questions.\n\nBest regards` },
+                    { label: 'Thank you', subject: 'Thank you!', body: `Hi ${contact.first_name},\n\nThank you so much for [reason]. It was a pleasure working with you.\n\nBest regards` },
+                    { label: 'Delivery notification', subject: 'Your photos are ready!', body: `Hi ${contact.first_name},\n\nGreat news! Your photos are ready for viewing. You can access them here:\n\n[Gallery link]\n\nLet me know what you think!\n\nBest regards` },
+                  ].map(template => (
+                    <a
+                      key={template.label}
+                      href={`mailto:${contact.email}?subject=${encodeURIComponent(template.subject)}&body=${encodeURIComponent(template.body)}`}
+                      className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-surface transition-colors cursor-pointer group"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
+                        <Mail size={14} className="text-primary-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-text text-sm font-medium">{template.label}</p>
+                        <p className="text-text-subtle text-xs truncate">{template.subject}</p>
+                      </div>
+                      <ExternalLink size={13} className="text-text-subtle opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </a>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 

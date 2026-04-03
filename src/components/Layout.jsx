@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
+import CommandPalette from './CommandPalette';
 import {
   LayoutDashboard,
   Users,
@@ -14,6 +15,7 @@ import {
   UserPlus,
   ListPlus,
   DollarSign,
+  Search,
 } from 'lucide-react';
 
 export default function Layout({ children }) {
@@ -94,6 +96,18 @@ export default function Layout({ children }) {
         </div>
       </div>
 
+      {/* Search Bar */}
+      <div className="px-3 mb-2">
+        <button
+          onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-surface border border-border-subtle text-text-subtle hover:border-border-hover hover:text-text-muted transition-colors cursor-pointer text-left"
+        >
+          <Search size={14} />
+          <span className="text-xs flex-1">Search...</span>
+          <kbd className="text-[10px] bg-surface-card px-1.5 py-0.5 rounded border border-border-subtle font-mono">⌘K</kbd>
+        </button>
+      </div>
+
       {/* Main Navigation */}
       <nav className="flex-1 px-3 space-y-5 mt-1">
         <div>
@@ -154,6 +168,8 @@ export default function Layout({ children }) {
 
   return (
     <div className="flex h-screen">
+      <CommandPalette />
+
       {/* Desktop Sidebar */}
       <div className="hidden md:flex fixed left-0 top-0 h-full w-[220px] glass-sidebar flex-col z-30">
         <SidebarContent />

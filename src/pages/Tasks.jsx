@@ -33,11 +33,11 @@ export default function Tasks() {
   const [saving, setSaving] = useState(false);
 
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('tasks-view') || 'list');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [priorityFilter, setPriorityFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('tasks-status-filter') || 'All');
+  const [priorityFilter, setPriorityFilter] = useState(() => localStorage.getItem('tasks-priority-filter') || 'All');
   const [contactFilter, setContactFilter] = useState('All');
-  const [typeFilter, setTypeFilter] = useState('All');
-  const [sortBy, setSortBy] = useState('Due Date');
+  const [typeFilter, setTypeFilter] = useState(() => localStorage.getItem('tasks-type-filter') || 'All');
+  const [sortBy, setSortBy] = useState(() => localStorage.getItem('tasks-sort') || 'Due Date');
   const [searchQuery, setSearchQuery] = useState('');
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(null);
@@ -58,7 +58,11 @@ export default function Tasks() {
 
   useEffect(() => {
     localStorage.setItem('tasks-view', viewMode);
-  }, [viewMode]);
+    localStorage.setItem('tasks-status-filter', statusFilter);
+    localStorage.setItem('tasks-priority-filter', priorityFilter);
+    localStorage.setItem('tasks-type-filter', typeFilter);
+    localStorage.setItem('tasks-sort', sortBy);
+  }, [viewMode, statusFilter, priorityFilter, typeFilter, sortBy]);
 
   const fetchTasks = async () => {
     try {

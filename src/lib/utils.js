@@ -82,6 +82,43 @@ export function getTaskTypeColor(type) {
   return getTaskTypeInfo(type).color;
 }
 
+export function getStaleContacts(contacts, notes, interactions, tasks, daysThreshold = 14) {
+  const now = new Date();
+  return contacts
+    .map(contact => {
+      const contactNotes = notes.filter(n => n.contact_id === contact.id);
+      const contactInteractions = interactions.filter(i => i.contact_id === contact.id);
+      const contactTasks = tasks.filter(t => t.contact_id === contact.id && t.status === 'completed');
+
+      const allDates = [
+        ...contactNotes.map(n => new Date(n.created_at)),
+        ...contactInteractions.map(i => new Date(i.created_at)),
+        ...contactTasks.map(t => new Date(t.completed_at || t.created_at)),
+      ];
+
+      const lastActivity = allDates.length > 0
+        ? new Date(Math.max(...allDates.map(d => d.getTime())))
+        : new Date(contact.created_at);
+
+      const daysSince = Math.floor((now - lastActivity) / (1000 * 60 * 60 * 24));
+
+      return { ...contact, lastActivity, daysSince };
+    })
+    .filter(c => c.daysSince >= daysThreshold && c.status !== 'inactive')
+    .sort((a, b) => b.daysSince - a.daysSince);
+}
+
+export function getDealsClosingThisWeek(deals) {
+  const now = new Date();
+  const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  return deals.filter(d => {
+    if (!d.expected_close_date) return false;
+    if (d.status === 'won' || d.status === 'lost') return false;
+    const closeDate = parseISO(d.expected_close_date);
+    return closeDate >= now && closeDate <= weekFromNow;
+  });
+}
+
 export function getTaskStats(tasks) {
   return {
     overdue: tasks.filter(t => {
