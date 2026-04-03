@@ -1,42 +1,45 @@
 import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
 
-export default function Modal({ title, children, onClose }) {
+const sizeClasses = {
+  sm: 'max-w-md',
+  md: 'max-w-lg',
+  lg: 'max-w-2xl',
+};
+
+export default function Modal({ title, children, onClose, size = 'md' }) {
   useEffect(() => {
     const handleEscape = (e) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
+      if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = '';
+    };
   }, [onClose]);
 
   const handleBackdropClick = (e) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
+    if (e.target === e.currentTarget) onClose();
   };
 
   return (
     <div
-      className="fixed inset-0 glass-modal-backdrop flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 glass-modal-backdrop flex items-center justify-center z-50 p-4 animate-[fadeIn_150ms_ease]"
       onClick={handleBackdropClick}
     >
-      <div className="glass-card bg-white/90 max-w-lg w-full mx-4 shadow-2xl shadow-indigo-500/10">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-200/60">
-          <h2 className="text-lg font-semibold text-slate-900 font-[family-name:var(--font-family-heading)]">{title}</h2>
+      <div className={`card bg-white ${sizeClasses[size]} w-full mx-2 sm:mx-4 shadow-xl animate-[scaleIn_150ms_ease] max-h-[90vh] flex flex-col`}>
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-border flex-shrink-0">
+          <h2 className="text-base font-semibold text-text">{title}</h2>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer p-1 hover:bg-slate-100 rounded-lg"
+            className="text-text-subtle hover:text-text transition-colors cursor-pointer p-1.5 hover:bg-surface rounded-md min-w-[36px] min-h-[36px] flex items-center justify-center"
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
-
-        {/* Content */}
-        <div className="p-6">
+        <div className="p-4 sm:p-6 overflow-y-auto">
           {children}
         </div>
       </div>
