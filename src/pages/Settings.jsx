@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useToast } from '../components/Toast';
 import {
   Plus, Edit2, Trash2, ChevronUp, ChevronDown, MessageCircle, Mail, Globe,
   Download, Trash, AlertCircle, Upload,
@@ -14,6 +15,7 @@ const INTEGRATIONS = [
 ];
 
 export default function Settings() {
+  const toast = useToast();
   const [stages, setStages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -83,7 +85,7 @@ export default function Settings() {
   const handleExportContacts = async () => {
     try {
       const { data } = await supabase.from('contacts').select('*');
-      if (!data || data.length === 0) { alert('No contacts to export'); return; }
+      if (!data || data.length === 0) { toast.info('No contacts to export'); return; }
       const keys = Object.keys(data[0]);
       const csvContent = [
         keys.join(','),
@@ -100,7 +102,7 @@ export default function Settings() {
       a.download = `contacts-${new Date().toISOString().split('T')[0]}.csv`;
       a.click();
       window.URL.revokeObjectURL(url);
-    } catch (error) { console.error('Error exporting:', error); alert('Failed to export'); }
+    } catch (error) { console.error('Error exporting:', error); toast.error('Failed to export'); }
   };
 
   const handleImportCSV = async (e) => {
@@ -109,7 +111,7 @@ export default function Settings() {
     try {
       const text = await file.text();
       const lines = text.split('\n').filter(l => l.trim());
-      if (lines.length < 2) { alert('CSV file is empty or has no data rows'); return; }
+      if (lines.length < 2) { toast.error('CSV file is empty or has no data rows'); return; }
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
       const firstNameIdx = headers.findIndex(h => h === 'first_name' || h === 'firstname' || h === 'first name');
       const lastNameIdx = headers.findIndex(h => h === 'last_name' || h === 'lastname' || h === 'last name');
@@ -117,7 +119,7 @@ export default function Settings() {
       const phoneIdx = headers.findIndex(h => h === 'phone');
       const companyIdx = headers.findIndex(h => h === 'company');
 
-      if (firstNameIdx === -1) { alert('CSV must have a "first_name" column'); return; }
+      if (firstNameIdx === -1) { toast.error('CSV must have a "first_name" column'); return; }
 
       const contacts = [];
       for (let i = 1; i < lines.length; i++) {
@@ -134,14 +136,14 @@ export default function Settings() {
         });
       }
 
-      if (contacts.length === 0) { alert('No valid contacts found in CSV'); return; }
+      if (contacts.length === 0) { toast.error('No valid contacts found in CSV'); return; }
       const { error } = await supabase.from('contacts').insert(contacts);
       if (error) throw error;
-      alert(`Successfully imported ${contacts.length} contacts`);
+      toast.success(`Imported ${contacts.length} contacts`);
       e.target.value = '';
     } catch (error) {
       console.error('Error importing:', error);
-      alert('Failed to import contacts');
+      toast.error('Failed to import contacts');
     }
   };
 
@@ -151,9 +153,9 @@ export default function Settings() {
         await supabase.from(table).delete().neq('id', '');
       }
       setShowDeleteConfirm(false);
-      alert('All data has been cleared');
+      toast.success('All data has been cleared');
       window.location.reload();
-    } catch (error) { console.error('Error clearing data:', error); alert('Failed to clear data'); }
+    } catch (error) { console.error('Error clearing data:', error); toast.error('Failed to clear data'); }
   };
 
   const sections = [

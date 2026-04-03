@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import {
   getColorFromHash, getInitials, getStatusBadgeColor, formatRelativeDate, getContactFullName,
@@ -23,6 +24,7 @@ const SOURCE_ICONS = {
 export default function Contacts() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const toast = useToast();
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -232,10 +234,11 @@ export default function Contacts() {
       if (error) throw error;
       setFormData({ firstName: '', lastName: '', email: '', phone: '', company: '', source: 'manual', status: 'lead', tags: '' });
       setShowAddModal(false);
+      toast.success('Contact added');
       fetchContacts();
     } catch (error) {
       console.error('Error adding contact:', error);
-      alert('Failed to add contact');
+      toast.error(error.message || 'Failed to add contact');
     }
   };
 

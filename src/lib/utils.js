@@ -63,6 +63,25 @@ export function formatCurrency(value) {
   return `£${Number(value).toLocaleString()}`;
 }
 
+const TASK_TYPES = [
+  { value: 'follow_up', label: 'Follow Up', color: 'badge-type-followup', icon: '📞' },
+  { value: 'shoot', label: 'Shoot', color: 'badge-type-shoot', icon: '📸' },
+  { value: 'edit', label: 'Edit', color: 'badge-type-edit', icon: '✏️' },
+  { value: 'delivery', label: 'Delivery', color: 'badge-type-delivery', icon: '📦' },
+  { value: 'admin', label: 'Admin', color: 'badge-type-admin', icon: '📋' },
+  { value: 'other', label: 'Other', color: 'badge-type-other', icon: '📌' },
+];
+
+export { TASK_TYPES };
+
+export function getTaskTypeInfo(type) {
+  return TASK_TYPES.find(t => t.value === type) || TASK_TYPES[TASK_TYPES.length - 1];
+}
+
+export function getTaskTypeColor(type) {
+  return getTaskTypeInfo(type).color;
+}
+
 export function getTaskStats(tasks) {
   return {
     overdue: tasks.filter(t => {

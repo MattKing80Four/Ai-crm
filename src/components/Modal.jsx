@@ -34,6 +34,7 @@ export default function Modal({ title, children, onClose, size = 'md' }) {
           <h2 className="text-base font-semibold text-text">{title}</h2>
           <button
             onClick={onClose}
+            title="Close (Esc)"
             className="text-text-subtle hover:text-text transition-colors cursor-pointer p-1.5 hover:bg-surface rounded-md min-w-[36px] min-h-[36px] flex items-center justify-center"
           >
             <X size={18} />

@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import {
   getPriorityColor, getDueDateInfo, findContactName, findDealTitle,
-  formatRelativeDate, getTaskStats,
+  formatRelativeDate, getTaskStats, getTaskTypeInfo, getTaskTypeColor, TASK_TYPES,
 } from '../lib/utils';
 import {
   Plus, Edit2, Trash2, Search, List, Kanban, CalendarDays,
-  ChevronLeft, ChevronRight, AlertTriangle, Clock, CheckCircle2,
+  ChevronLeft, ChevronRight, AlertTriangle, Clock, CheckCircle2, Tag, User,
 } from 'lucide-react';
 import {
   format, isToday, isPast, isThisWeek, parseISO, startOfMonth, endOfMonth,
@@ -21,17 +22,20 @@ const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 
 export default function Tasks() {
   const [searchParams] = useSearchParams();
+  const toast = useToast();
   const [tasks, setTasks] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('tasks-view') || 'list');
   const [statusFilter, setStatusFilter] = useState('All');
   const [priorityFilter, setPriorityFilter] = useState('All');
   const [contactFilter, setContactFilter] = useState('All');
+  const [typeFilter, setTypeFilter] = useState('All');
   const [sortBy, setSortBy] = useState('Due Date');
   const [searchQuery, setSearchQuery] = useState('');
   const [calendarMonth, setCalendarMonth] = useState(new Date());
@@ -40,7 +44,7 @@ export default function Tasks() {
 
   const [formData, setFormData] = useState({
     title: '', description: '', contact_id: '', deal_id: '',
-    priority: 'Medium', due_date: '', status: 'Pending',
+    priority: 'Medium', due_date: '', status: 'Pending', type: 'other',
   });
 
   useEffect(() => {
@@ -63,6 +67,7 @@ export default function Tasks() {
       setTasks(data || []);
     } catch (error) {
       console.error('Error fetching tasks:', error);
+      toast.error('Failed to load tasks');
     } finally {
       setLoading(false);
     }
@@ -84,6 +89,7 @@ export default function Tasks() {
         if (statusFilter !== 'All' && t.status !== statusFilter) return false;
         if (priorityFilter !== 'All' && t.priority !== priorityFilter) return false;
         if (contactFilter !== 'All' && t.contact_id !== contactFilter) return false;
+        if (typeFilter !== 'All' && (t.type || 'other') !== typeFilter) return false;
         if (searchQuery && !t.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
         return true;
       })
@@ -94,9 +100,10 @@ export default function Tasks() {
           const order = { Urgent: 0, High: 1, Medium: 2, Low: 3 };
           return (order[a.priority] ?? 2) - (order[b.priority] ?? 2);
         }
+        if (sortBy === 'Type') return (a.type || 'other').localeCompare(b.type || 'other');
         return 0;
       });
-  }, [tasks, statusFilter, priorityFilter, contactFilter, searchQuery, sortBy]);
+  }, [tasks, statusFilter, priorityFilter, contactFilter, typeFilter, searchQuery, sortBy]);
 
   const stats = useMemo(() => getTaskStats(tasks), [tasks]);
 
@@ -136,8 +143,12 @@ export default function Tasks() {
   }, [calendarMonth]);
 
   const tasksForDate = (date) => {
-    return tasks.filter(t => t.due_date && isSameDay(parseISO(t.due_date), date));
+    return filteredTasks.filter(t => t.due_date && isSameDay(parseISO(t.due_date), date));
   };
+
+  const calendarTaskCount = useMemo(() => {
+    return filteredTasks.filter(t => t.due_date && isSameMonth(parseISO(t.due_date), calendarMonth)).length;
+  }, [filteredTasks, calendarMonth]);
 
   const handleOpenModal = (task = null) => {
     if (task) {
@@ -146,60 +157,71 @@ export default function Tasks() {
         title: task.title, description: task.description || '',
         contact_id: task.contact_id || '', deal_id: task.deal_id || '',
         priority: task.priority || 'Medium', due_date: task.due_date || '',
-        status: task.status || 'Pending',
+        status: task.status || 'Pending', type: task.type || 'other',
       });
     } else {
       setEditingTask(null);
-      setFormData({ title: '', description: '', contact_id: '', deal_id: '', priority: 'Medium', due_date: '', status: 'Pending' });
+      setFormData({ title: '', description: '', contact_id: '', deal_id: '', priority: 'Medium', due_date: '', status: 'Pending', type: 'other' });
     }
     setShowModal(true);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSaving(true);
     try {
       const taskData = {
         title: formData.title, description: formData.description || null,
         contact_id: formData.contact_id || null, deal_id: formData.deal_id || null,
-        priority: formData.priority, due_date: formData.due_date || null, status: formData.status,
+        priority: formData.priority, due_date: formData.due_date || null,
+        status: formData.status, type: formData.type || 'other',
       };
       if (editingTask) {
         const { error } = await supabase.from('tasks').update(taskData).eq('id', editingTask.id);
         if (error) throw error;
+        toast.success('Task updated');
       } else {
         const { error } = await supabase.from('tasks').insert(taskData);
         if (error) throw error;
+        toast.success('Task created');
       }
       fetchTasks();
       setShowModal(false);
       setEditingTask(null);
     } catch (error) {
       console.error('Error saving task:', error);
-      alert('Error saving task');
+      toast.error(error.message || 'Failed to save task');
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleQuickAdd = async (e) => {
     if (e.key !== 'Enter' || !quickAddText.trim()) return;
     try {
-      const { error } = await supabase.from('tasks').insert({ title: quickAddText.trim(), priority: 'Medium', status: 'Pending' });
+      const { error } = await supabase.from('tasks').insert({ title: quickAddText.trim(), priority: 'Medium', status: 'Pending', type: 'other' });
       if (error) throw error;
       setQuickAddText('');
+      toast.success('Task added');
       fetchTasks();
     } catch (error) {
       console.error('Error adding task:', error);
+      toast.error('Failed to add task');
     }
   };
 
   const handleToggleCompleted = async (task) => {
     const newStatus = task.status === 'Completed' ? 'Pending' : 'Completed';
     const completedAt = newStatus === 'Completed' ? new Date().toISOString() : null;
+    // Optimistic update
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus, completed_at: completedAt } : t));
     try {
       const { error } = await supabase.from('tasks').update({ status: newStatus, completed_at: completedAt }).eq('id', task.id);
       if (error) throw error;
-      fetchTasks();
     } catch (error) {
       console.error('Error updating task:', error);
+      toast.error('Failed to update task');
+      fetchTasks(); // revert
     }
   };
 
@@ -208,24 +230,51 @@ export default function Tasks() {
     try {
       const { error } = await supabase.from('tasks').delete().eq('id', taskId);
       if (error) throw error;
+      toast.success('Task deleted');
       fetchTasks();
     } catch (error) {
       console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
     }
   };
 
   const handleDragEnd = async (result) => {
     if (!result.destination) return;
     const taskId = result.draggableId;
-    const newStatus = result.destination.droppableId;
+    const destinationId = result.destination.droppableId;
     const task = tasks.find(t => t.id === taskId);
-    if (!task || task.status === newStatus) return;
+    if (!task) return;
+
+    // Calendar drop (droppableId is a date like "2026-04-03")
+    if (/^\d{4}-\d{2}-\d{2}$/.test(destinationId)) {
+      const newDate = destinationId;
+      if (task.due_date === newDate) return;
+      // Optimistic
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, due_date: newDate } : t));
+      try {
+        const { error } = await supabase.from('tasks').update({ due_date: newDate }).eq('id', taskId);
+        if (error) throw error;
+        toast.success(`Moved to ${format(parseISO(newDate), 'MMM d')}`);
+      } catch (error) {
+        toast.error('Failed to move task');
+        fetchTasks();
+      }
+      return;
+    }
+
+    // Board drop (droppableId is a status)
+    const newStatus = destinationId;
+    if (task.status === newStatus) return;
     const completedAt = newStatus === 'Completed' ? new Date().toISOString() : null;
+    // Optimistic
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus, completed_at: completedAt } : t));
     try {
-      await supabase.from('tasks').update({ status: newStatus, completed_at: completedAt }).eq('id', taskId);
-      fetchTasks();
+      const { error } = await supabase.from('tasks').update({ status: newStatus, completed_at: completedAt }).eq('id', taskId);
+      if (error) throw error;
     } catch (error) {
       console.error('Error moving task:', error);
+      toast.error('Failed to move task');
+      fetchTasks();
     }
   };
 
@@ -233,13 +282,14 @@ export default function Tasks() {
     const contactName = findContactName(contacts, task.contact_id);
     const dealTitle = findDealTitle(deals, task.deal_id);
     const dueInfo = getDueDateInfo(task.due_date);
+    const typeInfo = getTaskTypeInfo(task.type);
     const isOverdue = task.due_date && isPast(parseISO(task.due_date)) && !isToday(parseISO(task.due_date)) && task.status !== 'Completed' && task.status !== 'Cancelled';
     const isDueToday = task.due_date && isToday(parseISO(task.due_date)) && task.status !== 'Completed' && task.status !== 'Cancelled';
 
     return (
-      <div className={`flex items-start gap-3 p-3 rounded-lg transition-colors hover:bg-surface group ${
+      <div className={`flex items-start gap-3 p-3 rounded-lg transition-colors hover:bg-surface group border-l-3 ${
         task.status === 'Completed' ? 'opacity-50' : ''
-      } ${isOverdue ? 'border-l-3 border-l-red-400' : isDueToday ? 'border-l-3 border-l-amber-400' : ''}`}>
+      } ${isOverdue ? 'border-l-red-400' : isDueToday ? 'border-l-amber-400' : `type-border-${task.type || 'other'}`}`}>
         <button
           onClick={() => handleToggleCompleted(task)}
           className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-colors flex-shrink-0 mt-0.5 cursor-pointer ${
@@ -257,16 +307,25 @@ export default function Tasks() {
             <h3 className={`text-sm font-medium ${task.status === 'Completed' ? 'line-through text-text-subtle' : 'text-text'}`}>
               {task.title}
             </h3>
-            <span className={`badge ${getPriorityColor(task.priority)} flex-shrink-0`}>
-              {task.priority || 'Medium'}
-            </span>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <span className={`badge ${getTaskTypeColor(task.type)}`}>
+                {typeInfo.label}
+              </span>
+              <span className={`badge ${getPriorityColor(task.priority)}`}>
+                {task.priority || 'Medium'}
+              </span>
+            </div>
           </div>
           {!compact && task.description && (
             <p className="text-xs text-text-subtle mt-0.5 truncate">{task.description}</p>
           )}
           <div className="flex items-center gap-3 mt-1.5 text-xs flex-wrap">
             <span className={dueInfo.color}>{dueInfo.text}</span>
-            {contactName && <span className="text-text-muted">{contactName}</span>}
+            {contactName && (
+              <span className="text-text-muted flex items-center gap-1">
+                <User size={10} /> {contactName}
+              </span>
+            )}
             {dealTitle && <span className="text-text-muted">{dealTitle}</span>}
           </div>
         </div>
@@ -336,22 +395,27 @@ export default function Tasks() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-subtle" />
           <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="input-base pl-8 text-sm py-1.5" />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input-base text-xs py-1.5 w-auto">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input-base text-xs py-1.5 !w-auto">
           <option>All</option>
           {STATUSES.map(s => <option key={s}>{s}</option>)}
         </select>
-        <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="input-base text-xs py-1.5 w-auto">
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input-base text-xs py-1.5 !w-auto">
+          <option value="All">All Types</option>
+          {TASK_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="input-base text-xs py-1.5 !w-auto hidden sm:block">
           <option>All</option>
           {PRIORITIES.map(p => <option key={p}>{p}</option>)}
         </select>
-        <select value={contactFilter} onChange={(e) => setContactFilter(e.target.value)} className="input-base text-xs py-1.5 w-auto hidden sm:block">
+        <select value={contactFilter} onChange={(e) => setContactFilter(e.target.value)} className="input-base text-xs py-1.5 !w-auto hidden sm:block">
           <option value="All">All Contacts</option>
           {contacts.map(c => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>)}
         </select>
-        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="input-base text-xs py-1.5 w-auto hidden sm:block">
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="input-base text-xs py-1.5 !w-auto hidden sm:block">
           <option>Due Date</option>
           <option>Created</option>
           <option>Priority</option>
+          <option>Type</option>
         </select>
       </div>
 
@@ -370,47 +434,56 @@ export default function Tasks() {
       )}
 
       {/* Content */}
-      {loading ? (
-        <div className="card p-4">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="flex items-center gap-3 py-3">
-              <div className="skeleton w-5 h-5 rounded-full" />
-              <div className="flex-1 space-y-2">
-                <div className="skeleton h-4 w-64" />
-                <div className="skeleton h-3 w-40" />
+      <DragDropContext onDragEnd={handleDragEnd}>
+        {loading ? (
+          <div className="card p-4">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex items-center gap-3 py-3">
+                <div className="skeleton w-5 h-5 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <div className="skeleton h-4 w-64" />
+                  <div className="skeleton h-3 w-40" />
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      ) : filteredTasks.length === 0 && viewMode !== 'calendar' ? (
-        <div className="card p-8 text-center">
-          <p className="text-text-muted text-sm">
-            {tasks.length === 0 ? 'No tasks yet. Create your first task to get started.' : 'No tasks match your filters.'}
-          </p>
-        </div>
-      ) : viewMode === 'list' ? (
-        /* List View with Grouping */
-        <div className="space-y-4">
-          {groupedTasks.map(([group, groupItems]) => (
-            <div key={group}>
-              <div className="flex items-center gap-2 mb-2 px-1">
-                <h3 className={`text-xs font-semibold uppercase tracking-wider ${
-                  group === 'Overdue' ? 'text-red-600' : group === 'Today' ? 'text-amber-600' : 'text-text-subtle'
-                }`}>
-                  {group}
-                </h3>
-                <span className="text-xs text-text-subtle">({groupItems.length})</span>
-                <div className="flex-1 h-px bg-border-subtle" />
+            ))}
+          </div>
+        ) : filteredTasks.length === 0 && viewMode !== 'calendar' ? (
+          <div className="card p-8 text-center">
+            <CheckCircle2 size={32} className="mx-auto text-text-subtle mb-3" />
+            <h2 className="text-text font-semibold mb-1">
+              {tasks.length === 0 ? 'No tasks yet' : 'No matching tasks'}
+            </h2>
+            <p className="text-text-muted text-sm mb-4">
+              {tasks.length === 0 ? 'Create your first task to start tracking your work.' : 'Try adjusting your filters.'}
+            </p>
+            {tasks.length === 0 && (
+              <button onClick={() => handleOpenModal()} className="btn-primary">
+                <Plus size={16} /> Create Task
+              </button>
+            )}
+          </div>
+        ) : viewMode === 'list' ? (
+          /* List View with Grouping */
+          <div className="space-y-4">
+            {groupedTasks.map(([group, groupItems]) => (
+              <div key={group}>
+                <div className="flex items-center gap-2 mb-2 px-1">
+                  <h3 className={`text-xs font-semibold uppercase tracking-wider ${
+                    group === 'Overdue' ? 'text-red-600' : group === 'Today' ? 'text-amber-600' : 'text-text-subtle'
+                  }`}>
+                    {group}
+                  </h3>
+                  <span className="text-xs text-text-subtle">({groupItems.length})</span>
+                  <div className="flex-1 h-px bg-border-subtle" />
+                </div>
+                <div className="card divide-y divide-border-subtle">
+                  {groupItems.map(task => <TaskItem key={task.id} task={task} />)}
+                </div>
               </div>
-              <div className="card divide-y divide-border-subtle">
-                {groupItems.map(task => <TaskItem key={task.id} task={task} />)}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : viewMode === 'board' ? (
-        /* Board View */
-        <DragDropContext onDragEnd={handleDragEnd}>
+            ))}
+          </div>
+        ) : viewMode === 'board' ? (
+          /* Board View */
           <div className="flex flex-col sm:flex-row gap-4 sm:overflow-x-auto pb-4" style={{ minHeight: '50vh' }}>
             {Object.entries(boardColumns).map(([status, columnTasks]) => {
               const StatusIcon = statusIcons[status];
@@ -434,31 +507,38 @@ export default function Tasks() {
                         </div>
                       </div>
                       <div className="flex-1 p-2 space-y-2 overflow-y-auto">
-                        {columnTasks.map((task, index) => (
-                          <Draggable key={task.id} draggableId={task.id} index={index}>
-                            {(provided, snapshot) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                {...provided.dragHandleProps}
-                                className={`card p-3 ${snapshot.isDragging ? 'shadow-lg rotate-1' : ''}`}
-                              >
-                                <h4 className="text-sm font-medium text-text mb-1">{task.title}</h4>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className={`badge ${getPriorityColor(task.priority)}`}>{task.priority || 'Medium'}</span>
-                                  {task.due_date && (
-                                    <span className={`text-xs ${getDueDateInfo(task.due_date).color}`}>
-                                      {getDueDateInfo(task.due_date).text}
-                                    </span>
+                        {columnTasks.map((task, index) => {
+                          const contactName = findContactName(contacts, task.contact_id);
+                          const typeInfo = getTaskTypeInfo(task.type);
+                          return (
+                            <Draggable key={task.id} draggableId={task.id} index={index}>
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                  className={`card p-3 border-l-3 type-border-${task.type || 'other'} ${snapshot.isDragging ? 'shadow-lg rotate-1' : ''}`}
+                                >
+                                  <h4 className="text-sm font-medium text-text mb-1.5">{task.title}</h4>
+                                  <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                                    <span className={`badge ${getTaskTypeColor(task.type)}`}>{typeInfo.label}</span>
+                                    <span className={`badge ${getPriorityColor(task.priority)}`}>{task.priority || 'Medium'}</span>
+                                    {task.due_date && (
+                                      <span className={`text-xs ${getDueDateInfo(task.due_date).color}`}>
+                                        {getDueDateInfo(task.due_date).text}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {contactName && (
+                                    <p className="text-xs text-text-muted flex items-center gap-1">
+                                      <User size={10} /> {contactName}
+                                    </p>
                                   )}
                                 </div>
-                                {findContactName(contacts, task.contact_id) && (
-                                  <p className="text-xs text-text-subtle mt-1.5">{findContactName(contacts, task.contact_id)}</p>
-                                )}
-                              </div>
-                            )}
-                          </Draggable>
-                        ))}
+                              )}
+                            </Draggable>
+                          );
+                        })}
                         {provided.placeholder}
                         <button
                           onClick={() => { setFormData(prev => ({ ...prev, status })); handleOpenModal(); }}
@@ -473,100 +553,128 @@ export default function Tasks() {
               );
             })}
           </div>
-        </DragDropContext>
-      ) : (
-        /* Calendar View */
-        <div className="card overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-border">
-            <button onClick={() => setCalendarMonth(subMonths(calendarMonth, 1))} className="btn-ghost p-1.5">
-              <ChevronLeft size={18} />
-            </button>
-            <h3 className="text-sm font-semibold text-text">{format(calendarMonth, 'MMMM yyyy')}</h3>
-            <button onClick={() => setCalendarMonth(addMonths(calendarMonth, 1))} className="btn-ghost p-1.5">
-              <ChevronRight size={18} />
-            </button>
-          </div>
-          <div className="grid grid-cols-7">
-            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
-              <div key={d} className="text-center text-[10px] sm:text-xs font-semibold text-text-subtle py-1.5 sm:py-2 border-b border-border-subtle">
-                <span className="hidden sm:inline">{d}</span>
-                <span className="sm:hidden">{d.charAt(0)}</span>
-              </div>
-            ))}
-            {calendarDays.map(day => {
-              const dayTasks = tasksForDate(day);
-              const isCurrentMonth = isSameMonth(day, calendarMonth);
-              const isSelected = selectedDate && isSameDay(day, selectedDate);
-              const isTodayDate = isToday(day);
-
-              return (
-                <div
-                  key={day.toISOString()}
-                  onClick={() => setSelectedDate(isSelected ? null : day)}
-                  className={`min-h-[48px] sm:min-h-[80px] p-1 sm:p-1.5 border-b border-r border-border-subtle cursor-pointer transition-colors ${
-                    !isCurrentMonth ? 'bg-surface opacity-50' : 'hover:bg-surface'
-                  } ${isSelected ? 'bg-primary-50' : ''}`}
+        ) : (
+          /* Calendar View */
+          <div className="card overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <button onClick={() => setCalendarMonth(subMonths(calendarMonth, 1))} className="btn-ghost p-1.5">
+                <ChevronLeft size={18} />
+              </button>
+              <div className="flex items-center gap-3">
+                <h3 className="text-sm font-semibold text-text">{format(calendarMonth, 'MMMM yyyy')}</h3>
+                <span className="text-xs text-text-muted">{calendarTaskCount} tasks</span>
+                <button
+                  onClick={() => { setCalendarMonth(new Date()); setSelectedDate(null); }}
+                  className="btn-ghost text-xs py-1 px-2"
                 >
-                  <span className={`text-[10px] sm:text-xs font-medium inline-flex items-center justify-center w-5 h-5 sm:w-6 sm:h-6 rounded-full ${
-                    isTodayDate ? 'bg-primary-600 text-white' : 'text-text-muted'
-                  }`}>
-                    {format(day, 'd')}
-                  </span>
-                  <div className="mt-0.5 space-y-0.5 hidden sm:block">
-                    {dayTasks.slice(0, 3).map(t => (
+                  Today
+                </button>
+              </div>
+              <button onClick={() => setCalendarMonth(addMonths(calendarMonth, 1))} className="btn-ghost p-1.5">
+                <ChevronRight size={18} />
+              </button>
+            </div>
+            <div className="grid grid-cols-7">
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
+                <div key={d} className="text-center text-[10px] sm:text-xs font-semibold text-text-subtle py-1.5 sm:py-2 border-b border-border-subtle">
+                  <span className="hidden sm:inline">{d}</span>
+                  <span className="sm:hidden">{d.charAt(0)}</span>
+                </div>
+              ))}
+              {calendarDays.map(day => {
+                const dayTasks = tasksForDate(day);
+                const isCurrentMonth = isSameMonth(day, calendarMonth);
+                const isSelected = selectedDate && isSameDay(day, selectedDate);
+                const isTodayDate = isToday(day);
+                const dateStr = format(day, 'yyyy-MM-dd');
+
+                return (
+                  <Droppable key={dateStr} droppableId={dateStr}>
+                    {(provided, snapshot) => (
                       <div
-                        key={t.id}
-                        className={`text-[10px] px-1 py-0.5 rounded truncate ${
-                          t.status === 'Completed'
-                            ? 'bg-emerald-100 text-emerald-700 line-through'
-                            : isPast(parseISO(t.due_date)) && !isToday(parseISO(t.due_date))
-                            ? 'bg-red-100 text-red-700'
-                            : 'bg-primary-100 text-primary-700'
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        onClick={() => setSelectedDate(isSelected ? null : day)}
+                        className={`min-h-[48px] sm:min-h-[80px] p-1 sm:p-1.5 border-b border-r border-border-subtle cursor-pointer transition-colors ${
+                          !isCurrentMonth ? 'bg-surface opacity-50' : 'hover:bg-surface'
+                        } ${isSelected ? 'bg-primary-50' : ''} ${
+                          snapshot.isDraggingOver ? 'bg-primary-50 border-primary-300' : ''
                         }`}
                       >
-                        {t.title}
+                        <span className={`text-[10px] sm:text-xs font-medium inline-flex items-center justify-center w-5 h-5 sm:w-6 sm:h-6 rounded-full ${
+                          isTodayDate ? 'bg-primary-600 text-white' : 'text-text-muted'
+                        }`}>
+                          {format(day, 'd')}
+                        </span>
+                        <div className="mt-0.5 space-y-0.5 hidden sm:block">
+                          {dayTasks.slice(0, 3).map((t, idx) => {
+                            const typeInfo = getTaskTypeInfo(t.type);
+                            return (
+                              <Draggable key={t.id} draggableId={t.id} index={idx}>
+                                {(dragProvided, dragSnapshot) => (
+                                  <div
+                                    ref={dragProvided.innerRef}
+                                    {...dragProvided.draggableProps}
+                                    {...dragProvided.dragHandleProps}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded truncate border-l-2 ${
+                                      t.status === 'Completed'
+                                        ? 'bg-emerald-100 text-emerald-700 line-through border-l-emerald-500'
+                                        : isPast(parseISO(t.due_date)) && !isToday(parseISO(t.due_date))
+                                        ? 'bg-red-100 text-red-700 border-l-red-500'
+                                        : `bg-gray-100 text-gray-700 type-border-${t.type || 'other'}`
+                                    } ${dragSnapshot.isDragging ? 'shadow-lg z-50' : ''}`}
+                                  >
+                                    {t.title}
+                                  </div>
+                                )}
+                              </Draggable>
+                            );
+                          })}
+                          {dayTasks.length > 3 && (
+                            <span className="text-[10px] text-text-subtle">+{dayTasks.length - 3} more</span>
+                          )}
+                        </div>
+                        {/* Mobile: show colored dots */}
+                        {dayTasks.length > 0 && (
+                          <div className="flex gap-0.5 mt-0.5 sm:hidden justify-center">
+                            {dayTasks.slice(0, 3).map(t => (
+                              <div
+                                key={t.id}
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  t.status === 'Completed' ? 'bg-emerald-500'
+                                    : isPast(parseISO(t.due_date)) && !isToday(parseISO(t.due_date)) ? 'bg-red-500'
+                                    : 'bg-primary-500'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        {provided.placeholder}
                       </div>
-                    ))}
-                    {dayTasks.length > 3 && (
-                      <span className="text-[10px] text-text-subtle">+{dayTasks.length - 3} more</span>
                     )}
-                  </div>
-                  {/* Mobile: show dots instead of text */}
-                  {dayTasks.length > 0 && (
-                    <div className="flex gap-0.5 mt-0.5 sm:hidden justify-center">
-                      {dayTasks.slice(0, 3).map(t => (
-                        <div
-                          key={t.id}
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            t.status === 'Completed' ? 'bg-emerald-500'
-                              : isPast(parseISO(t.due_date)) && !isToday(parseISO(t.due_date)) ? 'bg-red-500'
-                              : 'bg-primary-500'
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {/* Selected Date Tasks */}
-          {selectedDate && (
-            <div className="border-t border-border p-4">
-              <h4 className="text-sm font-semibold text-text mb-3">
-                Tasks for {format(selectedDate, 'EEEE, MMMM d')}
-              </h4>
-              {tasksForDate(selectedDate).length === 0 ? (
-                <p className="text-text-subtle text-sm">No tasks on this date</p>
-              ) : (
-                <div className="space-y-1">
-                  {tasksForDate(selectedDate).map(task => <TaskItem key={task.id} task={task} compact />)}
-                </div>
-              )}
+                  </Droppable>
+                );
+              })}
             </div>
-          )}
-        </div>
-      )}
+            {/* Selected Date Tasks */}
+            {selectedDate && (
+              <div className="border-t border-border p-4">
+                <h4 className="text-sm font-semibold text-text mb-3">
+                  Tasks for {format(selectedDate, 'EEEE, MMMM d')}
+                </h4>
+                {tasksForDate(selectedDate).length === 0 ? (
+                  <p className="text-text-subtle text-sm">No tasks on this date</p>
+                ) : (
+                  <div className="space-y-1">
+                    {tasksForDate(selectedDate).map(task => <TaskItem key={task.id} task={task} compact />)}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </DragDropContext>
 
       {/* Modal */}
       {showModal && (
@@ -580,12 +688,20 @@ export default function Tasks() {
               <label className="block text-xs font-medium text-text-secondary mb-1.5">Description</label>
               <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows="2" className="input-base resize-none" placeholder="Task details..." />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1.5">Contact</label>
-              <select value={formData.contact_id} onChange={(e) => setFormData({ ...formData, contact_id: e.target.value })} className="input-base">
-                <option value="">No contact</option>
-                {contacts.map(c => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>)}
-              </select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">Type</label>
+                <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })} className="input-base">
+                  {TASK_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">Contact</label>
+                <select value={formData.contact_id} onChange={(e) => setFormData({ ...formData, contact_id: e.target.value })} className="input-base">
+                  <option value="">No contact</option>
+                  {contacts.map(c => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>)}
+                </select>
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1.5">Deal</label>
@@ -613,8 +729,8 @@ export default function Tasks() {
               </div>
             </div>
             <div className="flex gap-3 pt-2">
-              <button type="submit" className="btn-primary flex-1 justify-center py-2.5">
-                {editingTask ? 'Update Task' : 'Create Task'}
+              <button type="submit" disabled={saving} className="btn-primary flex-1 justify-center py-2.5 disabled:opacity-50">
+                {saving ? 'Saving...' : (editingTask ? 'Update Task' : 'Create Task')}
               </button>
               <button type="button" onClick={() => { setShowModal(false); setEditingTask(null); }} className="btn-secondary flex-1 justify-center py-2.5">
                 Cancel

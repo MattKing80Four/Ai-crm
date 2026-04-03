@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import { formatCurrency, findContactName, getColorFromHash, getInitials } from '../lib/utils';
 import {
-  Plus, Edit2, Trash2, PoundSterling, User, Calendar, MoreVertical,
+  Plus, Edit2, Trash2, PoundSterling, User, Calendar, MoreVertical, Filter,
 } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format } from 'date-fns';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
 export default function Pipeline() {
   const [searchParams] = useSearchParams();
+  const toast = useToast();
   const [stages, setStages] = useState([]);
   const [deals, setDeals] = useState([]);
   const [contacts, setContacts] = useState([]);
@@ -18,11 +20,17 @@ export default function Pipeline() {
   const [showDealModal, setShowDealModal] = useState(false);
   const [editingDeal, setEditingDeal] = useState(null);
   const [activeMenu, setActiveMenu] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [closedFilter, setClosedFilter] = useState('all');
 
   const [formData, setFormData] = useState({
-    title: '', value: '', contact_id: '', stage: '',
-    status: 'active', description: '', expected_close: '',
+    title: '', value: '', contact_id: '', stage_id: '',
+    status: 'open', description: '', expected_close_date: '',
   });
+
+  const isActive = (status) => status === 'active' || status === 'open' || !status;
+  const getStageName = (stageId) => stages.find(s => s.id === stageId)?.name || '';
+  const getStageId = (stageName) => stages.find(s => s.name === stageName)?.id || '';
 
   useEffect(() => { fetchData(); }, []);
 
@@ -38,41 +46,52 @@ export default function Pipeline() {
         supabase.from('deals').select('*').order('created_at', { ascending: false }),
         supabase.from('contacts').select('id, first_name, last_name').order('first_name'),
       ]);
+      if (s.error) throw s.error;
+      if (d.error) throw d.error;
+      if (c.error) throw c.error;
       setStages(s.data || []);
       setDeals(d.data || []);
       setContacts(c.data || []);
     } catch (error) {
       console.error('Error fetching pipeline:', error);
+      toast.error('Failed to load pipeline data');
     } finally {
       setLoading(false);
     }
   };
 
-  const getDealsForStage = (stageName) => deals.filter(d => d.stage === stageName && (d.status === 'active' || !d.status));
-  const getStageValue = (stageName) => getDealsForStage(stageName).reduce((sum, d) => sum + (d.value || 0), 0);
+  const getDealsForStage = (stageId) => deals.filter(d => d.stage_id === stageId && isActive(d.status));
+  const getStageValue = (stageId) => getDealsForStage(stageId).reduce((sum, d) => sum + (parseFloat(d.value) || 0), 0);
 
   const summary = useMemo(() => {
-    const active = deals.filter(d => d.status === 'active' || !d.status);
-    const totalValue = active.reduce((sum, d) => sum + (d.value || 0), 0);
+    const active = deals.filter(d => isActive(d.status));
+    const totalValue = active.reduce((sum, d) => sum + (parseFloat(d.value) || 0), 0);
     const wonDeals = deals.filter(d => d.status === 'won');
-    const wonValue = wonDeals.reduce((sum, d) => sum + (d.value || 0), 0);
+    const wonValue = wonDeals.reduce((sum, d) => sum + (parseFloat(d.value) || 0), 0);
     const avgValue = active.length > 0 ? totalValue / active.length : 0;
     return { totalDeals: active.length, totalValue, wonDeals: wonDeals.length, wonValue, avgValue };
   }, [deals]);
 
-  const handleOpenModal = (deal = null, defaultStage = '') => {
+  const closedDeals = useMemo(() => {
+    const closed = deals.filter(d => d.status === 'won' || d.status === 'lost');
+    if (closedFilter === 'won') return closed.filter(d => d.status === 'won');
+    if (closedFilter === 'lost') return closed.filter(d => d.status === 'lost');
+    return closed;
+  }, [deals, closedFilter]);
+
+  const handleOpenModal = (deal = null, defaultStageId = '') => {
     if (deal) {
       setEditingDeal(deal);
       setFormData({
         title: deal.title || '', value: deal.value || '', contact_id: deal.contact_id || '',
-        stage: deal.stage || '', status: deal.status || 'active',
-        description: deal.description || '', expected_close: deal.expected_close || '',
+        stage_id: deal.stage_id || '', status: deal.status || 'open',
+        description: deal.description || '', expected_close_date: deal.expected_close_date || '',
       });
     } else {
       setEditingDeal(null);
       setFormData({
-        title: '', value: '', contact_id: '', stage: defaultStage || (stages[0]?.name || ''),
-        status: 'active', description: '', expected_close: '',
+        title: '', value: '', contact_id: '', stage_id: defaultStageId || (stages[0]?.id || ''),
+        status: 'open', description: '', expected_close_date: '',
       });
     }
     setShowDealModal(true);
@@ -81,46 +100,65 @@ export default function Pipeline() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSaving(true);
     try {
       const dealData = {
         title: formData.title, value: formData.value ? parseFloat(formData.value) : null,
-        contact_id: formData.contact_id || null, stage: formData.stage,
+        contact_id: formData.contact_id || null, stage_id: formData.stage_id,
         status: formData.status, description: formData.description || null,
-        expected_close: formData.expected_close || null,
+        expected_close_date: formData.expected_close_date || null,
       };
       if (editingDeal) {
-        await supabase.from('deals').update(dealData).eq('id', editingDeal.id);
+        const { error } = await supabase.from('deals').update(dealData).eq('id', editingDeal.id);
+        if (error) throw error;
+        toast.success('Deal updated');
       } else {
-        await supabase.from('deals').insert(dealData);
+        const { error } = await supabase.from('deals').insert(dealData);
+        if (error) throw error;
+        toast.success('Deal created');
       }
       await fetchData();
       setShowDealModal(false);
       setEditingDeal(null);
     } catch (error) {
       console.error('Error saving deal:', error);
-      alert('Error saving deal');
+      toast.error(error.message || 'Failed to save deal');
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleDeleteDeal = async (dealId) => {
     if (!window.confirm('Delete this deal?')) return;
     try {
-      await supabase.from('deals').delete().eq('id', dealId);
+      const { error } = await supabase.from('deals').delete().eq('id', dealId);
+      if (error) throw error;
+      toast.success('Deal deleted');
       await fetchData();
       setActiveMenu(null);
-    } catch (error) { console.error('Error deleting deal:', error); }
+    } catch (error) {
+      console.error('Error deleting deal:', error);
+      toast.error(error.message || 'Failed to delete deal');
+    }
   };
 
   const handleDragEnd = async (result) => {
     if (!result.destination) return;
     const dealId = result.draggableId;
-    const newStage = result.destination.droppableId;
+    const newStageId = result.destination.droppableId;
     const deal = deals.find(d => d.id === dealId);
-    if (!deal || deal.stage === newStage) return;
+    if (!deal || deal.stage_id === newStageId) return;
+
+    // Optimistic update
+    setDeals(prev => prev.map(d => d.id === dealId ? { ...d, stage_id: newStageId } : d));
     try {
-      await supabase.from('deals').update({ stage: newStage }).eq('id', dealId);
-      await fetchData();
-    } catch (error) { console.error('Error moving deal:', error); }
+      const { error } = await supabase.from('deals').update({ stage_id: newStageId }).eq('id', dealId);
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error moving deal:', error);
+      toast.error('Failed to move deal');
+      fetchData(); // revert
+    }
   };
 
   if (loading) {
@@ -192,11 +230,11 @@ export default function Pipeline() {
       <DragDropContext onDragEnd={handleDragEnd}>
         <div className="flex flex-col sm:flex-row gap-4 sm:overflow-x-auto pb-4" style={{ minHeight: '55vh' }}>
           {stages.map(stage => {
-            const stageDeals = getDealsForStage(stage.name);
-            const stageValue = getStageValue(stage.name);
+            const stageDeals = getDealsForStage(stage.id);
+            const stageValue = getStageValue(stage.id);
 
             return (
-              <Droppable key={stage.name} droppableId={stage.name}>
+              <Droppable key={stage.id} droppableId={stage.id}>
                 {(provided, snapshot) => (
                   <div
                     ref={provided.innerRef}
@@ -221,7 +259,7 @@ export default function Pipeline() {
                     <div className="flex-1 p-2 space-y-2 overflow-y-auto">
                       {stageDeals.map((deal, index) => {
                         const contactName = findContactName(contacts, deal.contact_id);
-                        const stageIndex = stages.findIndex(s => s.name === deal.stage);
+                        const stageIndex = stages.findIndex(s => s.id === deal.stage_id);
                         const progress = stages.length > 1 ? ((stageIndex + 1) / stages.length) * 100 : 100;
 
                         return (
@@ -269,15 +307,15 @@ export default function Pipeline() {
                                       <User size={11} /> {contactName}
                                     </span>
                                   )}
-                                  {deal.expected_close && (
+                                  {deal.expected_close_date && (
                                     <span className="flex items-center gap-1">
-                                      <Calendar size={11} /> {format(new Date(deal.expected_close), 'MMM d')}
+                                      <Calendar size={11} /> {format(new Date(deal.expected_close_date), 'MMM d')}
                                     </span>
                                   )}
                                 </div>
 
                                 {/* Stage progress */}
-                                <div className="h-1 bg-border-subtle rounded-full overflow-hidden">
+                                <div className="h-1 bg-border-subtle rounded-full overflow-hidden group/progress relative">
                                   <div className="h-full bg-primary-400 rounded-full transition-all" style={{ width: `${progress}%` }} />
                                 </div>
                               </div>
@@ -288,7 +326,7 @@ export default function Pipeline() {
                       {provided.placeholder}
 
                       <button
-                        onClick={() => handleOpenModal(null, stage.name)}
+                        onClick={() => handleOpenModal(null, stage.id)}
                         className="w-full border border-dashed border-border-hover rounded-lg p-2.5 text-text-subtle hover:text-primary-600 hover:border-primary-300 transition-colors flex items-center justify-center gap-1.5 text-xs cursor-pointer"
                       >
                         <Plus size={14} /> Add Deal
@@ -303,24 +341,43 @@ export default function Pipeline() {
       </DragDropContext>
 
       {/* Won/Lost Deals */}
-      {deals.some(d => d.status === 'won' || d.status === 'lost') && (
+      {closedDeals.length > 0 || deals.some(d => d.status === 'won' || d.status === 'lost') ? (
         <div className="card p-5">
-          <h2 className="text-sm font-semibold text-text mb-3">Closed Deals</h2>
-          <div className="space-y-2">
-            {deals.filter(d => d.status === 'won' || d.status === 'lost').map(deal => (
-              <div key={deal.id} className="flex items-center justify-between p-2.5 rounded-lg hover:bg-surface transition-colors">
-                <div className="flex items-center gap-3">
-                  <span className={`badge ${deal.status === 'won' ? 'badge-won' : 'badge-lost'}`}>
-                    {deal.status === 'won' ? 'Won' : 'Lost'}
-                  </span>
-                  <span className="text-sm text-text">{deal.title}</span>
-                </div>
-                <span className="text-sm font-medium text-text">{deal.value ? formatCurrency(deal.value) : '—'}</span>
-              </div>
-            ))}
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-text">Closed Deals</h2>
+            <div className="flex gap-1">
+              {['all', 'won', 'lost'].map(f => (
+                <button
+                  key={f}
+                  onClick={() => setClosedFilter(f)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                    closedFilter === f ? 'bg-primary-50 text-primary-600' : 'text-text-subtle hover:text-text'
+                  }`}
+                >
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </button>
+              ))}
+            </div>
           </div>
+          {closedDeals.length === 0 ? (
+            <p className="text-text-subtle text-sm text-center py-4">No {closedFilter} deals</p>
+          ) : (
+            <div className="space-y-2">
+              {closedDeals.map(deal => (
+                <div key={deal.id} className="flex items-center justify-between p-2.5 rounded-lg hover:bg-surface transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className={`badge ${deal.status === 'won' ? 'badge-won' : 'badge-lost'}`}>
+                      {deal.status === 'won' ? 'Won' : 'Lost'}
+                    </span>
+                    <span className="text-sm text-text">{deal.title}</span>
+                  </div>
+                  <span className="text-sm font-medium text-text">{deal.value ? formatCurrency(deal.value) : '—'}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      ) : null}
 
       {/* Deal Modal */}
       {showDealModal && (
@@ -337,8 +394,8 @@ export default function Pipeline() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-secondary mb-1.5">Stage</label>
-                <select value={formData.stage} onChange={(e) => setFormData({ ...formData, stage: e.target.value })} className="input-base">
-                  {stages.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                <select value={formData.stage_id} onChange={(e) => setFormData({ ...formData, stage_id: e.target.value })} className="input-base">
+                  {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
             </div>
@@ -356,17 +413,19 @@ export default function Pipeline() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-text-secondary mb-1.5">Expected Close</label>
-                <input type="date" value={formData.expected_close} onChange={(e) => setFormData({ ...formData, expected_close: e.target.value })} className="input-base" />
+                <input type="date" value={formData.expected_close_date} onChange={(e) => setFormData({ ...formData, expected_close_date: e.target.value })} className="input-base" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-secondary mb-1.5">Status</label>
                 <select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value })} className="input-base">
-                  <option value="active">Active</option><option value="won">Won</option><option value="lost">Lost</option>
+                  <option value="open">Active</option><option value="won">Won</option><option value="lost">Lost</option>
                 </select>
               </div>
             </div>
             <div className="flex gap-3 pt-2">
-              <button type="submit" className="btn-primary flex-1 justify-center py-2.5">{editingDeal ? 'Update Deal' : 'Create Deal'}</button>
+              <button type="submit" disabled={saving} className="btn-primary flex-1 justify-center py-2.5 disabled:opacity-50">
+                {saving ? 'Saving...' : (editingDeal ? 'Update Deal' : 'Create Deal')}
+              </button>
               <button type="button" onClick={() => { setShowDealModal(false); setEditingDeal(null); }} className="btn-secondary flex-1 justify-center py-2.5">Cancel</button>
             </div>
           </form>

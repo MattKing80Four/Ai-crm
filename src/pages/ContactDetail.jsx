@@ -1,22 +1,25 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import {
   getColorFromHash, getInitials, getStatusBadgeColor, getPriorityColor,
-  formatRelativeDate, formatCurrency,
+  formatRelativeDate, formatCurrency, getDueDateInfo, getContactFullName,
+  getTaskTypeInfo, getTaskTypeColor, TASK_TYPES,
 } from '../lib/utils';
 import {
   ArrowLeft, Edit, Phone, Mail, Building, Calendar,
   MessageSquare, CheckSquare, TrendingUp, Plus, AlertCircle,
   ArrowUpRight, ArrowDownLeft, Trash2, FileText, Clock,
-  PhoneCall, StickyNote,
+  PhoneCall, StickyNote, User,
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 
 export default function ContactDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const [contact, setContact] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('Timeline');
@@ -24,13 +27,15 @@ export default function ContactDetail() {
   const [tasks, setTasks] = useState([]);
   const [interactions, setInteractions] = useState([]);
   const [deals, setDeals] = useState([]);
+  const [stages, setStages] = useState([]);
 
   const [newNote, setNewNote] = useState('');
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showInteractionForm, setShowInteractionForm] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', status: 'Pending', priority: 'Medium', dueDate: '' });
+  const [saving, setSaving] = useState(false);
+  const [newTask, setNewTask] = useState({ title: '', status: 'Pending', priority: 'Medium', dueDate: '', type: 'other' });
   const [newInteraction, setNewInteraction] = useState({ subject: '', content: '', channel: 'email', direction: 'outbound' });
   const [editForm, setEditForm] = useState({
     first_name: '', last_name: '', email: '', phone: '', company: '', source: 'manual', status: 'lead', tags: '',
@@ -45,18 +50,21 @@ export default function ContactDetail() {
       if (error) throw error;
       setContact(contactData);
 
-      const [notesData, tasksData, interactionsData, dealsData] = await Promise.all([
+      const [notesData, tasksData, interactionsData, dealsData, stagesData] = await Promise.all([
         supabase.from('notes').select('*').eq('contact_id', id).order('created_at', { ascending: false }),
         supabase.from('tasks').select('*').eq('contact_id', id).order('created_at', { ascending: false }),
         supabase.from('interactions').select('*').eq('contact_id', id).order('created_at', { ascending: false }),
         supabase.from('deals').select('*').eq('contact_id', id).order('created_at', { ascending: false }),
+        supabase.from('pipeline_stages').select('id, name').order('position', { ascending: true }),
       ]);
       setNotes(notesData.data || []);
       setTasks(tasksData.data || []);
       setInteractions(interactionsData.data || []);
       setDeals(dealsData.data || []);
+      setStages(stagesData.data || []);
     } catch (error) {
       console.error('Error fetching contact data:', error);
+      toast.error('Failed to load contact');
     } finally {
       setLoading(false);
     }
@@ -75,40 +83,65 @@ export default function ContactDetail() {
   const handleAddNote = async (e) => {
     e.preventDefault();
     if (!newNote.trim()) return;
+    setSaving(true);
     try {
-      await supabase.from('notes').insert([{ contact_id: id, content: newNote, source: 'manual' }]);
+      const { error } = await supabase.from('notes').insert([{ contact_id: id, content: newNote, source: 'manual' }]);
+      if (error) throw error;
       setNewNote(''); setShowNoteForm(false);
+      toast.success('Note added');
       fetchContactData();
-    } catch (error) { console.error('Error adding note:', error); }
+    } catch (error) {
+      console.error('Error adding note:', error);
+      toast.error(error.message || 'Failed to add note');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newTask.title.trim()) return;
+    setSaving(true);
     try {
-      await supabase.from('tasks').insert([{
+      const { error } = await supabase.from('tasks').insert([{
         contact_id: id, title: newTask.title, status: newTask.status,
         priority: newTask.priority, due_date: newTask.dueDate || null,
+        type: newTask.type || 'other',
       }]);
-      setNewTask({ title: '', status: 'Pending', priority: 'Medium', dueDate: '' });
+      if (error) throw error;
+      setNewTask({ title: '', status: 'Pending', priority: 'Medium', dueDate: '', type: 'other' });
       setShowTaskForm(false);
+      toast.success('Task created');
       fetchContactData();
-    } catch (error) { console.error('Error adding task:', error); }
+    } catch (error) {
+      console.error('Error adding task:', error);
+      toast.error(error.message || 'Failed to create task');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleAddInteraction = async (e) => {
     e.preventDefault();
     if (!newInteraction.subject.trim()) return;
+    setSaving(true);
     try {
-      await supabase.from('interactions').insert([{
+      const { error } = await supabase.from('interactions').insert([{
         contact_id: id, subject: newInteraction.subject,
         content: newInteraction.content || null, channel: newInteraction.channel,
         direction: newInteraction.direction,
       }]);
+      if (error) throw error;
       setNewInteraction({ subject: '', content: '', channel: 'email', direction: 'outbound' });
       setShowInteractionForm(false);
+      toast.success('Interaction logged');
       fetchContactData();
-    } catch (error) { console.error('Error adding interaction:', error); }
+    } catch (error) {
+      console.error('Error adding interaction:', error);
+      toast.error(error.message || 'Failed to log interaction');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleOpenEdit = () => {
@@ -123,16 +156,24 @@ export default function ContactDetail() {
 
   const handleSaveEdit = async (e) => {
     e.preventDefault();
+    setSaving(true);
     try {
-      await supabase.from('contacts').update({
+      const { error } = await supabase.from('contacts').update({
         first_name: editForm.first_name, last_name: editForm.last_name,
         email: editForm.email || null, phone: editForm.phone || null,
         company: editForm.company || null, source: editForm.source, status: editForm.status,
         tags: editForm.tags.split(',').map(t => t.trim()).filter(t => t),
       }).eq('id', id);
+      if (error) throw error;
       setShowEditModal(false);
+      toast.success('Contact updated');
       fetchContactData();
-    } catch (error) { console.error('Error updating contact:', error); alert('Error updating contact'); }
+    } catch (error) {
+      console.error('Error updating contact:', error);
+      toast.error(error.message || 'Failed to update contact');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDeleteContact = async () => {
@@ -143,17 +184,29 @@ export default function ContactDetail() {
         supabase.from('tasks').delete().eq('contact_id', id),
         supabase.from('interactions').delete().eq('contact_id', id),
       ]);
-      await supabase.from('contacts').delete().eq('id', id);
+      const { error } = await supabase.from('contacts').delete().eq('id', id);
+      if (error) throw error;
+      toast.success('Contact deleted');
       navigate('/contacts');
-    } catch (error) { console.error('Error deleting contact:', error); }
+    } catch (error) {
+      console.error('Error deleting contact:', error);
+      toast.error('Failed to delete contact');
+    }
   };
 
   const handleToggleTask = async (task) => {
     const newStatus = task.status === 'Completed' ? 'Pending' : 'Completed';
+    const completedAt = newStatus === 'Completed' ? new Date().toISOString() : null;
+    // Optimistic
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus, completed_at: completedAt } : t));
     try {
-      await supabase.from('tasks').update({ status: newStatus, completed_at: newStatus === 'Completed' ? new Date().toISOString() : null }).eq('id', task.id);
+      const { error } = await supabase.from('tasks').update({ status: newStatus, completed_at: completedAt }).eq('id', task.id);
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error updating task:', error);
+      toast.error('Failed to update task');
       fetchContactData();
-    } catch (error) { console.error('Error updating task:', error); }
+    }
   };
 
   if (loading) {
@@ -331,6 +384,11 @@ export default function ContactDetail() {
                         {item._type === 'deal' && item.value > 0 && (
                           <p className="text-text-muted text-xs mt-0.5">{formatCurrency(item.value)} · {item.stage}</p>
                         )}
+                        {item._type === 'task' && (
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className={`badge ${getTaskTypeColor(item.type)}`}>{getTaskTypeInfo(item.type).label}</span>
+                          </div>
+                        )}
                         <div className="flex items-center gap-2 mt-1 text-xs text-text-subtle">
                           <span className="capitalize">{item._type}</span>
                           <span>{formatRelativeDate(item.created_at)}</span>
@@ -355,7 +413,7 @@ export default function ContactDetail() {
                 <form onSubmit={handleAddNote} className="card p-4">
                   <textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Write a note..." className="input-base resize-none h-20 mb-3" />
                   <div className="flex gap-2">
-                    <button type="submit" className="btn-primary text-xs">Save Note</button>
+                    <button type="submit" disabled={saving} className="btn-primary text-xs disabled:opacity-50">{saving ? 'Saving...' : 'Save Note'}</button>
                     <button type="button" onClick={() => { setShowNoteForm(false); setNewNote(''); }} className="btn-secondary text-xs">Cancel</button>
                   </div>
                 </form>
@@ -385,7 +443,10 @@ export default function ContactDetail() {
               {showTaskForm && (
                 <form onSubmit={handleAddTask} className="card p-4 space-y-3">
                   <input type="text" value={newTask.title} onChange={(e) => setNewTask({ ...newTask, title: e.target.value })} placeholder="Task title..." className="input-base" />
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <select value={newTask.type} onChange={(e) => setNewTask({ ...newTask, type: e.target.value })} className="input-base text-sm">
+                      {TASK_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
                     <select value={newTask.priority} onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })} className="input-base text-sm">
                       <option>Low</option><option>Medium</option><option>High</option><option>Urgent</option>
                     </select>
@@ -395,7 +456,7 @@ export default function ContactDetail() {
                     <input type="date" value={newTask.dueDate} onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })} className="input-base text-sm" />
                   </div>
                   <div className="flex gap-2">
-                    <button type="submit" className="btn-primary text-xs">Save Task</button>
+                    <button type="submit" disabled={saving} className="btn-primary text-xs disabled:opacity-50">{saving ? 'Saving...' : 'Save Task'}</button>
                     <button type="button" onClick={() => setShowTaskForm(false)} className="btn-secondary text-xs">Cancel</button>
                   </div>
                 </form>
@@ -403,27 +464,31 @@ export default function ContactDetail() {
               {tasks.length === 0 ? (
                 <div className="text-center py-8 text-text-subtle text-sm">No tasks yet</div>
               ) : (
-                tasks.map(task => (
-                  <div key={task.id} className="card p-3 flex items-start gap-3">
-                    <button
-                      onClick={() => handleToggleTask(task)}
-                      className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 cursor-pointer ${
-                        task.status === 'Completed' ? 'bg-primary-600 border-primary-600' : 'border-border-hover hover:border-primary-400'
-                      }`}
-                    >
-                      {task.status === 'Completed' && (
-                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                      )}
-                    </button>
-                    <div className="flex-1">
-                      <p className={`text-sm font-medium ${task.status === 'Completed' ? 'line-through text-text-subtle' : 'text-text'}`}>{task.title}</p>
-                      <div className="flex gap-2 mt-1 text-xs">
-                        <span className={`badge ${getPriorityColor(task.priority)}`}>{task.priority || 'Medium'}</span>
-                        {task.due_date && <span className="text-text-subtle">{format(new Date(task.due_date), 'MMM d, yyyy')}</span>}
+                tasks.map(task => {
+                  const typeInfo = getTaskTypeInfo(task.type);
+                  return (
+                    <div key={task.id} className={`card p-3 flex items-start gap-3 border-l-3 type-border-${task.type || 'other'}`}>
+                      <button
+                        onClick={() => handleToggleTask(task)}
+                        className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 cursor-pointer ${
+                          task.status === 'Completed' ? 'bg-primary-600 border-primary-600' : 'border-border-hover hover:border-primary-400'
+                        }`}
+                      >
+                        {task.status === 'Completed' && (
+                          <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                        )}
+                      </button>
+                      <div className="flex-1">
+                        <p className={`text-sm font-medium ${task.status === 'Completed' ? 'line-through text-text-subtle' : 'text-text'}`}>{task.title}</p>
+                        <div className="flex gap-1.5 mt-1 text-xs flex-wrap">
+                          <span className={`badge ${getTaskTypeColor(task.type)}`}>{typeInfo.label}</span>
+                          <span className={`badge ${getPriorityColor(task.priority)}`}>{task.priority || 'Medium'}</span>
+                          {task.due_date && <span className={getDueDateInfo(task.due_date).color}>{getDueDateInfo(task.due_date).text}</span>}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}
@@ -448,7 +513,7 @@ export default function ContactDetail() {
                     </select>
                   </div>
                   <div className="flex gap-2">
-                    <button type="submit" className="btn-primary text-xs">Save</button>
+                    <button type="submit" disabled={saving} className="btn-primary text-xs disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
                     <button type="button" onClick={() => setShowInteractionForm(false)} className="btn-secondary text-xs">Cancel</button>
                   </div>
                 </form>
@@ -495,8 +560,8 @@ export default function ContactDetail() {
                       </div>
                     </div>
                     <div className="flex gap-2 mt-2">
-                      <span className="badge bg-primary-50 text-primary-700">{deal.stage}</span>
-                      {deal.status && deal.status !== 'active' && (
+                      <span className="badge bg-primary-50 text-primary-700">{stages.find(s => s.id === deal.stage_id)?.name || 'Unknown'}</span>
+                      {deal.status && deal.status !== 'active' && deal.status !== 'open' && (
                         <span className={`badge ${deal.status === 'won' ? 'badge-won' : deal.status === 'lost' ? 'badge-lost' : 'badge-inactive'}`}>
                           {deal.status.charAt(0).toUpperCase() + deal.status.slice(1)}
                         </span>
@@ -547,7 +612,7 @@ export default function ContactDetail() {
               <input type="text" value={editForm.tags} onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })} placeholder="Comma-separated" className="input-base" />
             </div>
             <div className="flex gap-3 pt-2">
-              <button type="submit" className="btn-primary flex-1 justify-center py-2.5">Save Changes</button>
+              <button type="submit" disabled={saving} className="btn-primary flex-1 justify-center py-2.5 disabled:opacity-50">{saving ? 'Saving...' : 'Save Changes'}</button>
               <button type="button" onClick={() => setShowEditModal(false)} className="btn-secondary flex-1 justify-center py-2.5">Cancel</button>
             </div>
           </form>

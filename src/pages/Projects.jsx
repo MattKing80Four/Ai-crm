@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import {
   getColorFromHash, getInitials, getStatusBadgeColor, getPriorityColor,
   formatRelativeDate, formatCurrency, getDueDateInfo, getContactFullName,
+  getTaskTypeInfo, getTaskTypeColor,
 } from '../lib/utils';
 import {
   Building2, Users, TrendingUp, CheckSquare, ArrowLeft,
@@ -98,14 +99,14 @@ export default function Projects() {
     return Object.values(companiesMap)
       .map(proj => ({
         ...proj,
-        totalValue: proj.deals.reduce((sum, d) => sum + (d.value || 0), 0),
-        activeDeals: proj.deals.filter(d => d.status === 'active' || !d.status).length,
+        totalValue: proj.deals.reduce((sum, d) => sum + (parseFloat(d.value) || 0), 0),
+        activeDeals: proj.deals.filter(d => d.status === 'active' || d.status === 'open' || !d.status).length,
         wonDeals: proj.deals.filter(d => d.status === 'won').length,
         pendingTasks: proj.tasks.filter(t => t.status !== 'Completed' && t.status !== 'Cancelled').length,
         stageDistribution: stages.map(s => ({
           name: s.name,
           color: s.color || '#6366f1',
-          count: proj.deals.filter(d => d.stage === s.name && (d.status === 'active' || !d.status)).length,
+          count: proj.deals.filter(d => d.stage_id === s.id && (d.status === 'active' || d.status === 'open' || !d.status)).length,
         })),
       }))
       .filter(p => p.deals.length > 0 || p.contacts.length > 1)
@@ -238,8 +239,8 @@ export default function Projects() {
                     <div className="flex-1 min-w-0">
                       <p className="text-text text-sm font-medium">{deal.title}</p>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className="badge bg-primary-50 text-primary-700">{deal.stage}</span>
-                        {deal.status && deal.status !== 'active' && (
+                        <span className="badge bg-primary-50 text-primary-700">{stages.find(s => s.id === deal.stage_id)?.name || 'Unknown'}</span>
+                        {deal.status && deal.status !== 'active' && deal.status !== 'open' && (
                           <span className={`badge ${deal.status === 'won' ? 'badge-won' : 'badge-lost'}`}>
                             {deal.status.charAt(0).toUpperCase() + deal.status.slice(1)}
                           </span>
@@ -274,6 +275,7 @@ export default function Projects() {
                           {task.title}
                         </p>
                       </div>
+                      <span className={`badge ${getTaskTypeColor(task.type)}`}>{getTaskTypeInfo(task.type).label}</span>
                       <span className={`badge ${getPriorityColor(task.priority)}`}>{task.priority}</span>
                       <span className={`text-xs ${dueInfo.color}`}>{dueInfo.text}</span>
                     </div>

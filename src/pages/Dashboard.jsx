@@ -8,7 +8,7 @@ import {
 import {
   Users, TrendingUp, CheckSquare, PoundSterling, Clock, Plus,
   ArrowUpRight, ArrowDownRight, UserPlus, ListPlus, DollarSign,
-  AlertTriangle, FileText, MessageSquare, Zap, Target,
+  AlertTriangle, FileText, MessageSquare, Zap, Target, CalendarDays,
 } from 'lucide-react';
 import { formatDistanceToNow, format, isToday, isPast, parseISO, subDays } from 'date-fns';
 
@@ -103,8 +103,8 @@ export default function Dashboard() {
 
   const stats = useMemo(() => {
     const { contacts, deals, tasks } = data;
-    const activeDeals = deals.filter(d => d.status === 'active' || !d.status);
-    const pipelineValue = activeDeals.reduce((sum, d) => sum + (d.value || 0), 0);
+    const activeDeals = deals.filter(d => d.status === 'active' || d.status === 'open' || !d.status);
+    const pipelineValue = activeDeals.reduce((sum, d) => sum + (parseFloat(d.value) || 0), 0);
     const pendingTasks = tasks.filter(t => t.status !== 'Completed' && t.status !== 'Cancelled');
 
     // Weekly trends (items created in last 7 days)
@@ -140,14 +140,14 @@ export default function Dashboard() {
 
   const pipelineFunnel = useMemo(() => {
     const { deals, stages } = data;
-    const activeDeals = deals.filter(d => d.status === 'active' || !d.status);
+    const activeDeals = deals.filter(d => d.status === 'active' || d.status === 'open' || !d.status);
     return stages.map(stage => {
-      const stageDeals = activeDeals.filter(d => d.stage === stage.name);
+      const stageDeals = activeDeals.filter(d => d.stage_id === stage.id);
       return {
         name: stage.name,
         color: stage.color || '#6366f1',
         count: stageDeals.length,
-        value: stageDeals.reduce((sum, d) => sum + (d.value || 0), 0),
+        value: stageDeals.reduce((sum, d) => sum + (parseFloat(d.value) || 0), 0),
       };
     });
   }, [data]);
@@ -210,6 +210,14 @@ export default function Dashboard() {
     ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 8);
   }, [data]);
 
+  const upcomingTasks = useMemo(() => {
+    const { tasks } = data;
+    return tasks
+      .filter(t => t.status !== 'Completed' && t.status !== 'Cancelled' && t.due_date)
+      .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
+      .slice(0, 5);
+  }, [data]);
+
   const quickStats = useMemo(() => {
     const { contacts, deals, tasks } = data;
     const totalDeals = deals.length;
@@ -270,20 +278,22 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-text">Dashboard</h1>
+          <h1 className="text-2xl font-bold text-text">
+            {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'}
+          </h1>
           <p className="text-text-muted text-sm mt-0.5">{format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
         </div>
       </div>
 
       {/* Quick Actions */}
       <div className="flex gap-2 flex-wrap">
-        <button onClick={() => navigate('/contacts?action=new')} className="btn-secondary text-xs py-1.5 px-3">
+        <button onClick={() => navigate('/contacts?action=new')} className="inline-flex items-center gap-2 text-xs font-medium py-2 px-3.5 rounded-lg bg-primary-50 text-primary-700 border border-primary-200 hover:bg-primary-100 transition-colors cursor-pointer">
           <UserPlus size={14} /> New Contact
         </button>
-        <button onClick={() => navigate('/pipeline?action=new')} className="btn-secondary text-xs py-1.5 px-3">
+        <button onClick={() => navigate('/pipeline?action=new')} className="inline-flex items-center gap-2 text-xs font-medium py-2 px-3.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer">
           <DollarSign size={14} /> New Deal
         </button>
-        <button onClick={() => navigate('/tasks?action=new')} className="btn-secondary text-xs py-1.5 px-3">
+        <button onClick={() => navigate('/tasks?action=new')} className="inline-flex items-center gap-2 text-xs font-medium py-2 px-3.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer">
           <ListPlus size={14} /> New Task
         </button>
       </div>
@@ -415,32 +425,47 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Recent Activity */}
+        {/* Upcoming Tasks */}
         <div className="card p-5">
-          <h2 className="text-sm font-semibold text-text mb-4">Recent Activity</h2>
-          {recentActivity.length === 0 ? (
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-text flex items-center gap-2">
+              <CalendarDays size={14} className="text-primary-500" />
+              Upcoming Tasks
+            </h2>
+            <button
+              onClick={() => navigate('/tasks')}
+              className="text-primary-600 hover:text-primary-700 text-xs font-medium transition-colors cursor-pointer"
+            >
+              View All
+            </button>
+          </div>
+          {upcomingTasks.length === 0 ? (
             <div className="text-center py-6">
-              <Clock size={24} className="mx-auto text-text-subtle mb-2" />
-              <p className="text-text-subtle text-sm">No recent activity</p>
+              <CheckSquare size={24} className="mx-auto text-text-subtle mb-2" />
+              <p className="text-text-subtle text-sm">No upcoming tasks</p>
             </div>
           ) : (
             <div className="space-y-2">
-              {recentActivity.map((activity) => {
-                const Icon = activity.icon;
+              {upcomingTasks.map((task) => {
+                const dueDate = task.due_date ? format(parseISO(task.due_date), 'MMM d') : '';
+                const isOverdue = task.due_date && isPast(parseISO(task.due_date)) && !isToday(parseISO(task.due_date));
+                const isDueToday = task.due_date && isToday(parseISO(task.due_date));
                 return (
-                  <div key={activity.id} className="flex gap-3 p-2.5 rounded-lg hover:bg-surface transition-colors">
-                    <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${
-                      activity.type === 'note' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'
-                    }`}>
-                      <Icon size={14} />
-                    </div>
+                  <div
+                    key={task.id}
+                    className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-surface transition-colors cursor-pointer"
+                    onClick={() => navigate('/tasks')}
+                  >
+                    <div className={`w-1.5 h-8 rounded-full flex-shrink-0 ${
+                      isOverdue ? 'bg-red-400' : isDueToday ? 'bg-amber-400' : 'bg-primary-400'
+                    }`} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-text text-sm truncate">{activity.description}</p>
+                      <p className="text-text text-sm font-medium truncate">{task.title}</p>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-text-subtle text-xs capitalize">{activity.type}</span>
-                        <span className="text-text-subtle text-xs">
-                          {formatRelativeDate(activity.created_at)}
+                        <span className={`text-xs ${isOverdue ? 'text-red-600' : isDueToday ? 'text-amber-600' : 'text-text-subtle'}`}>
+                          {isOverdue ? 'Overdue' : isDueToday ? 'Today' : dueDate}
                         </span>
+                        <span className={`badge ${getPriorityColor(task.priority)}`}>{task.priority}</span>
                       </div>
                     </div>
                   </div>
